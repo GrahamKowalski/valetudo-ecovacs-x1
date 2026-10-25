@@ -18,3 +18,36 @@ build/
 /backend/lib/robots/midea/generated/midea_protobufs.js
 
 /docs/dist
+
+# --- ecovacs fork: secrets & device identifiers (never commit) ---
+# The X1 serial is the root credential seed. Device identifiers (serial, deviceId, mId,
+# resourceId, MAC, MQTT creds) belong only in /local/valetudo_config.json (ignored above).
+
+# TLS keys/certs, incl. Ecocloud's server.key/server.crt and MITM CAs
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+/backend/lib/ecovacs/server.key
+/backend/lib/ecovacs/server.crt
+
+# Traffic captures
+**/mitm/
+**/captures/
+*.pcap
+*.pcapng
+sslkeylog*.txt
+
+# Firmware dumps
+**/firmware/
+**/dumps/
+*.img
+*.ubi
+*.squashfs
+
+# Misc secrets
+*.secret.json
+*.secrets.*
+.env
+.env.*
