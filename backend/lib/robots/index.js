@@ -1,4 +1,5 @@
 const dreame = require("./dreame");
+const ecovacs = require("./ecovacs");
 const midea = require("./midea");
 const mock = require("./mock");
 const roborock = require("./roborock");
@@ -9,5 +10,6 @@ module.exports = Object.assign({},
     viomi,
     dreame,
     midea,
-    mock
+    mock,
+    ecovacs
 );
