@@ -38,6 +38,7 @@ build/
 *.pcap
 *.pcapng
 sslkeylog*.txt
+ecocloud-*.jsonl
 
 # Firmware dumps
 **/firmware/

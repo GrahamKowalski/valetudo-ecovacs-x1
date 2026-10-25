@@ -4,13 +4,20 @@
 
 const capabilities = require("./capabilities");
 const Ecocloud = require("../../ecovacs/Ecocloud");
+const EcocloudRecorder = require("../../ecovacs/EcocloudRecorder");
+const EcocloudRedactor = require("../../ecovacs/EcocloudRedactor");
 const entities = require("../../entities");
+const fs = require("fs");
 const LinuxWifiScanCapability = require("../common/linuxCapabilities/LinuxWifiScanCapability");
 const Logger = require("../../Logger");
 const Tools = require("../../utils/Tools");
 const ValetudoRobot = require("../../core/ValetudoRobot");
 const { MapLayer, PointMapEntity, ValetudoMap } = require("../../entities/map");
 const stateAttrs = entities.state.attributes;
+
+// Our own convention next to upstream's DustCA in /etc/ssl/valetudo/, not something the firmware provides
+const TLS_KEY_PATH = "/etc/ssl/valetudo/ecocloud.key";
+const TLS_CERT_PATH = "/etc/ssl/valetudo/ecocloud.crt";
 
 // TODO extends EcovacsValetudoRobot
 class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
@@ -29,16 +36,51 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
 
         this.ecovacsBindIp = this.implConfig["ecovacsBindIp"] ?? (this.config.get("embedded") ? "127.0.0.1" : "0.0.0.0");
         this.ecovacsBindPort = this.implConfig["ecovacsBindPort"] ?? (this.config.get("embedded") ? 443 : 1883);
+
+        this.redactor = new EcocloudRedactor({
+            secrets: Object.assign(
+                {},
+                this.implConfig["ecovacsRedactValues"],
+                {
+                    deviceId: this.deviceId,
+                    mId: this.mId,
+                    resourceId: this.resourceId
+                }
+            )
+        });
+
+        const tlsKeyPath = this.implConfig["ecovacsTlsKeyPath"] ?? (this.config.get("embedded") ? TLS_KEY_PATH : undefined);
+        const tlsCertPath = this.implConfig["ecovacsTlsCertPath"] ?? (this.config.get("embedded") ? TLS_CERT_PATH : undefined);
+        let tlsKey;
+        let tlsCert;
+
+        if (tlsKeyPath || tlsCertPath) {
+            if (!fs.existsSync(tlsKeyPath) || !fs.existsSync(tlsCertPath)) {
+                throw new Error(`Ecocloud TLS key/certificate not found at "${tlsKeyPath}" and "${tlsCertPath}". Unable to mock the cloud.`);
+            }
+
+            tlsKey = fs.readFileSync(tlsKeyPath);
+            tlsCert = fs.readFileSync(tlsCertPath);
+        }
+
         this.ecocloud = new Ecocloud({
             deviceId: this.deviceId,
             mId: this.mId,
             resourceId: this.resourceId,
             bindIP: this.ecovacsBindIp,
             bindPort: this.ecovacsBindPort,
+            tlsKey: tlsKey,
+            tlsCert: tlsCert,
+            timeout: this.implConfig["ecovacsRequestTimeout"],
+            redactor: this.redactor,
+            recorder: this.implConfig["ecovacsCaptureDirectory"] ? new EcocloudRecorder({
+                directory: this.implConfig["ecovacsCaptureDirectory"],
+                redactor: this.redactor
+            }) : undefined,
             onConnected: async () => {
                 // TODO
             },
-            onIncomingCloudMessage: this.onIncomingCloudMessage,
+            onIncomingCloudMessage: this.onIncomingCloudMessage.bind(this),
         });
 
         // this.registerCapability(new capabilities.MockWifiConfigurationCapability({robot: this}));
@@ -131,7 +173,9 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
     }
 
     onIncomingCloudMessage(msg) {
-        // console.log('got packet here', msg)
+        // TODO: handle pushes here once they've been captured from the real device
+        Logger.debug(`Cloud message on ${this.redactor.redactString(msg.topic)}`);
+
         return true;
     }
 
@@ -155,9 +199,10 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
     }
 
     startup() {
-        Logger.info("DeviceId " + this.deviceId);
-        Logger.info("Mid " + this.mId);
-        Logger.info("ResourceId " + this.resourceId);
+        // Only state whether they're set. The values are device secrets and logs tend to get shared
+        Logger.info(`DeviceId ${this.deviceId ? "configured" : "missing"}`);
+        Logger.info(`Mid ${this.mId ? "configured" : "missing"}`);
+        Logger.info(`ResourceId ${this.resourceId ? "configured" : "missing"}`);
     }
 
     getManufacturer() {

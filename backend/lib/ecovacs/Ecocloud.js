@@ -3,9 +3,8 @@
 // Imported unmodified from ValetudoEV commit d7a48bca; later changes are recorded in git history.
 
 const EcocloudTimeoutError = require("./EcocloudTimeoutError");
-const fs = require("fs");
 const Logger = require("../Logger");
-const path = require("path");
+const tls = require("tls");
 const { createBroker } = require("aedes");
 
 class Ecocloud {
@@ -16,6 +15,11 @@ class Ecocloud {
      * @param {string} options.resourceId
      * @param {string} options.bindIP "127.0.0.1" on the robot, "0.0.0.0" in development
      * @param {number} options.bindPort 443 on the robot, 1883 in development
+     * @param {string|Buffer} [options.tlsKey] PEM private key of the server certificate. Without key and cert, Ecocloud won't listen
+     * @param {string|Buffer} [options.tlsCert] PEM server certificate the robot has to trust
+     * @param {number} [options.timeout] P2P request timeout in ms
+     * @param {import("./EcocloudRedactor")} options.redactor used for log output
+     * @param {import("./EcocloudRecorder")} [options.recorder] if set, every exchange is recorded
      * @param {() => void} options.onConnected  function to call after completing a handshake
      * @param {(msg: any) => boolean} options.onIncomingCloudMessage  function to call for incoming messages
      */
@@ -25,6 +29,9 @@ class Ecocloud {
         this.deviceId = options.deviceId;
         this.mId = options.mId;
         this.resourceId = options.resourceId;
+        this.timeout = options.timeout ?? 500;
+        this.redactor = options.redactor;
+        this.recorder = options.recorder;
         this.onIncomingCloudMessage = options.onIncomingCloudMessage;
         this.onConnected = options.onConnected;
         this.connected = false;
@@ -34,46 +41,55 @@ class Ecocloud {
         // TODO for some reason Aedes() or new Aedes() complains
         this.aedes = createBroker();
 
-        // TODO
-        const server = require("tls").createServer({
-            key: fs.readFileSync(path.join(__dirname, "/server.key")),
-            cert: fs.readFileSync(path.join(__dirname, "/server.crt")),
-        }, this.aedes.handle);
+        if (options.tlsKey && options.tlsCert) {
+            this.server = tls.createServer({
+                key: options.tlsKey,
+                cert: options.tlsCert,
+            }, this.aedes.handle);
 
-        server.listen(this.bindPort, this.bindIP, () => {
-            Logger.info(`Ecocloud is listening on ${this.bindIP}:${this.bindPort}`);
-            // aedes.publish({ topic: 'aedes/hello', payload: "I'm broker " + aedes.id })
-        });
+            this.server.listen(this.bindPort, this.bindIP, () => {
+                const address = /** @type {import("net").AddressInfo} */ (this.server.address());
 
-        server.on("error", (e) => {
-            Logger.error("Ecocloud Error: ", e);
-        });
+                Logger.info(`Ecocloud is listening on ${this.bindIP}:${address.port}`);
+            });
+
+            this.server.on("error", (e) => {
+                Logger.error("Ecocloud Error: ", e);
+            });
+        } else {
+            Logger.warn("Ecocloud: No TLS key/certificate configured. Not listening.");
+        }
 
         this.aedes.on("subscribe", (subscriptions, client) => {
-            Logger.debug(`Ecocloud client: ${client?.id} subscribed to topics: ${subscriptions.map(s => s.topic).join(" ")}`);
+            const topics = subscriptions.map(s => s.topic);
+
+            Logger.debug(`Ecocloud client: ${this.redactor.redactString(String(client?.id))} subscribed to topics: ${this.redactor.redactString(topics.join(" "))}`);
+            this.recorder?.recordEvent("subscribe", { client: client?.id, topics: topics });
         });
 
         this.aedes.on("unsubscribe", (subscriptions, client) => {
-            Logger.debug(`Ecocloud client: ${client?.id} unsubscribed from topics: ${subscriptions.join(" ")}`);
+            Logger.debug(`Ecocloud client: ${this.redactor.redactString(String(client?.id))} unsubscribed from topics: ${this.redactor.redactString(subscriptions.join(" "))}`);
+            this.recorder?.recordEvent("unsubscribe", { client: client?.id, topics: subscriptions });
         });
 
         this.aedes.on("client", (client) => {
-            Logger.debug(`Ecocloud client: ${client?.id} connected`);
+            Logger.debug(`Ecocloud client: ${this.redactor.redactString(String(client?.id))} connected`);
+            this.recorder?.recordEvent("connect", { client: client?.id });
         });
 
         this.aedes.on("clientDisconnect", (client) => {
-            Logger.debug(`Ecocloud client: ${client?.id} disconnected`);
+            Logger.debug(`Ecocloud client: ${this.redactor.redactString(String(client?.id))} disconnected`);
+            this.recorder?.recordEvent("disconnect", { client: client?.id });
         });
 
         this.aedes.on("publish", async (packet, client) => {
-            // TODO
-            // this will always get evaluated
-            Logger.debug(`Ecocloud client: ${client?.id || "BROKER_" + this.aedes.id} published on ${packet.topic} with ${packet.payload.toString()}`);
-
             // internal message or a message from us
             if (!client) {
                 return;
             }
+
+            Logger.debug(`Ecocloud client: ${this.redactor.redactString(String(client.id))} published on ${this.redactor.redactString(packet.topic)} with ${this.redactor.redactString(packet.payload.toString())}`);
+            this.recorder?.recordMessage("in", packet.topic, packet.payload, client.id);
 
             const topic = packet.topic.split("/");
             const [iot, topic_type] = topic;
@@ -97,22 +113,20 @@ class Ecocloud {
             if (topic_type === Ecocloud.MESSAGE_TYPES.P2P) {
                 // iot/p2p/getInfo/x/y/z/HelperMQClientId-awsna-sts-ngiot-mqsjmq-21/ecosys/1234/p/S1Ty/j
                 const msgId = topic[topic.length - 2];
-                if (!(msgId in this.pendingP2PRequests)) {
-                    // may have happened during a reboot
-                    Logger.debug("<< ignoring response for non-pending request", msgId);
-                    return;
-                }
                 const request = this.pendingP2PRequests[msgId];
-                delete this.pendingP2PRequests[msgId];
-                clearTimeout(request.timeoutId);
-                request.resolve(packet.payload);
-            } else {
-                Logger.debug("unhandled topic type", topic_type);
-                return;
+                if (request) {
+                    delete this.pendingP2PRequests[msgId];
+                    clearTimeout(request.timeoutId);
+                    request.resolve(packet.payload);
+                } else {
+                    // may have happened during a reboot, or the robot initiated it
+                    Logger.debug("<< p2p message without a pending request", msgId);
+                }
             }
 
             // TODO
-            // handle default messages if any, then throw to robot
+            // handle default messages if any
+            // Everything else is passed on so that unsolicited pushes aren't silently dropped
             this.onIncomingCloudMessage(packet);
         });
     }
@@ -173,7 +187,7 @@ class Ecocloud {
             })
                 .catch(reject);
 
-            this.pendingP2PRequests[msgId].timeoutId = setTimeout(() => this.pendingP2PRequests[msgId].onTimeout(), 500);
+            this.pendingP2PRequests[msgId].timeoutId = setTimeout(() => this.pendingP2PRequests[msgId].onTimeout(), this.timeout);
         });
     }
 
@@ -199,6 +213,8 @@ class Ecocloud {
      * @returns {Promise<void>}
      */
     publish(packet) {
+        this.recorder?.recordMessage("out", packet.topic, packet.payload);
+
         return new Promise((resolve, reject) => {
             this.aedes.publish(packet, (err) => {
                 if (err) {
@@ -222,16 +238,30 @@ class Ecocloud {
      *
      * @returns {Promise<void>}
      */
-    shutdown() {
-        return new Promise((resolve, reject) => {
-            Logger.debug("Ecocloud shutdown in progress...");
+    async shutdown() {
+        Logger.debug("Ecocloud shutdown in progress...");
 
+        for (const request of Object.values(this.pendingP2PRequests)) {
+            if (request) {
+                clearTimeout(request.timeoutId);
+            }
+        }
+
+        await new Promise((resolve) => {
             this.aedes.close(() => {
-                Logger.debug("Ecocloud shutdown done");
-
                 resolve();
             });
         });
+
+        if (this.server) {
+            await new Promise((resolve) => {
+                this.server.close(resolve);
+            });
+        }
+
+        await this.recorder?.shutdown();
+
+        Logger.debug("Ecocloud shutdown done");
     }
 }
 
