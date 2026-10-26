@@ -23,14 +23,29 @@ this fork to upstream.
 
 ## Map parser
 
-`backend/lib/robots/ecovacs/EcovacsMapParser.js` decodes the X1 `map/ManipulateShowMap`
-payload into a `ValetudoMap`: an LZMA1 blob (Ecovacs truncated header) to an 800x800
-occupancy grid, mapped to floor/wall/segment layers at 5 cm pixel size. The format was
-confirmed by decoding a real capture (see the research repo's map-format note). The parser
-is implemented and tested (`EcovacsMapParser_test.js`, synthetic fixture); live map
-acquisition (calling the service / receiving the map over the Ecocloud channel) is the
-remaining device-side step that will feed `EcovacsX1OmniValetudoRobot.handleMapData()`.
-Until then `buildMap()` stays a placeholder mock.
+`backend/lib/robots/ecovacs/EcovacsMapParser.js` decodes the X1 `map/CompressMap` payload
+(from the ROS services `GetCurrentCompressMap` / `ManipulateShowMap`) into a `ValetudoMap`:
+a tiled grid of LZMA1 submaps (Ecovacs truncated header) assembled into an 800x800 occupancy
+grid, mapped to floor/wall/segment layers at 5 cm pixel size. `POSE_TO_ENTITY` adds robot and
+charger `PointMapEntity`s from world poses (dock = grid center, no y-flip, theta=0 points down).
+Format and transform confirmed by decoding a real capture and placing the robot on-device (see
+the research repo's map-format note and handoff). Tested in `EcovacsMapParser_test.js` against a
+synthetic tiled fixture.
+
+## State parser
+
+`backend/lib/robots/ecovacs/EcovacsRobotStateParser.js` decodes the fixed-offset fields of the
+`/robot/Robot` ROS message (pose, `power/Battery`, `power/ChargeState`);
+`EcovacsX1OmniValetudoRobot.handleRobotState()` maps them to a `BatteryStateAttribute`.
+Attachment sensors (waterbox/dustbin/mop) are later in the same message, after variable-length
+arrays, and are a follow-up. Tested in `EcovacsRobotStateParser_test.js`.
+
+## Live acquisition (pending)
+
+The parsers are fed by `handleMapData()` / `handleRobotState()`. Live acquisition (the backend
+fetching `GetCurrentCompressMap`, `/robot/Robot`, `/map/ChargerDockInfo` over TCPROS itself) is
+the remaining integration step. It was proven out of band with the Python toolkit in the research
+repo's `scripts/`. Until it is wired, `buildMap()` stays a placeholder mock.
 
 ## Configuration
 
