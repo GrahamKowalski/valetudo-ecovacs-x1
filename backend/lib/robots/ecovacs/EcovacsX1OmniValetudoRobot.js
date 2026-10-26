@@ -8,6 +8,7 @@ const EcocloudRecorder = require("../../ecovacs/EcocloudRecorder");
 const EcocloudRedactor = require("../../ecovacs/EcocloudRedactor");
 const EcovacsMapParser = require("./EcovacsMapParser");
 const EcovacsRobotStateParser = require("./EcovacsRobotStateParser");
+const EcovacsRosLink = require("./ros/EcovacsRosLink");
 const entities = require("../../entities");
 const fs = require("fs");
 const LinuxWifiScanCapability = require("../common/linuxCapabilities/LinuxWifiScanCapability");
@@ -201,6 +202,18 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
     }
 
     startup() {
+        // Reflash-free data path: read state and map straight from the robot's ROS graph.
+        // Only possible when the backend can reach the master (i.e. runs on the robot).
+        if (this.implConfig["ecovacsRosMasterUri"]) {
+            this.rosLink = new EcovacsRosLink({
+                robot: this,
+                masterUri: this.implConfig["ecovacsRosMasterUri"],
+                mapPollIntervalMs: this.implConfig["ecovacsRosMapPollInterval"] ?? 30000
+            });
+            this.rosLink.start();
+            Logger.info(`ROS link started against ${this.implConfig["ecovacsRosMasterUri"]}`);
+        }
+
         // Only state whether they're set. The values are device secrets and logs tend to get shared
         Logger.info(`DeviceId ${this.deviceId ? "configured" : "missing"}`);
         Logger.info(`Mid ${this.mId ? "configured" : "missing"}`);
@@ -294,9 +307,10 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         if (!s) {
             return;
         }
+        this.lastRobotState = s;
 
         let flag = stateAttrs.BatteryStateAttribute.FLAG.DISCHARGING;
-        if (s.isOnCharger === 1) {
+        if (s.isOnCharger !== 0) {
             flag = s.battery >= 100 ?
                 stateAttrs.BatteryStateAttribute.FLAG.CHARGED :
                 stateAttrs.BatteryStateAttribute.FLAG.CHARGING;
@@ -304,6 +318,105 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
 
         this.state.upsertFirstMatchingAttribute(new stateAttrs.BatteryStateAttribute({
             level: s.battery,
+            flag: flag
+        }));
+
+        if (s.dustbinIn !== null) {
+            this.state.upsertFirstMatchingAttribute(new stateAttrs.AttachmentStateAttribute({
+                type: stateAttrs.AttachmentStateAttribute.TYPE.DUSTBIN,
+                attached: s.dustbinIn
+            }));
+        }
+        if (s.module !== null) {
+            // The module bay holds either the mop plate (with its water path) or the
+            // vacuum-only/aromatherapy module. Valetudo's "watertank" is the mop plate here.
+            const mop = s.module === EcovacsRobotStateParser.MODULE.MOP;
+            this.state.upsertFirstMatchingAttribute(new stateAttrs.AttachmentStateAttribute({
+                type: stateAttrs.AttachmentStateAttribute.TYPE.MOP,
+                attached: mop
+            }));
+            this.state.upsertFirstMatchingAttribute(new stateAttrs.AttachmentStateAttribute({
+                type: stateAttrs.AttachmentStateAttribute.TYPE.WATERTANK,
+                attached: mop
+            }));
+        }
+
+        this.updateStatus();
+    }
+
+    /**
+     * @public
+     * @param {Buffer} payload a raw /task/WorkState message body
+     */
+    handleWorkState(payload) {
+        const w = EcovacsRobotStateParser.PARSE_WORK_STATE(payload);
+        if (!w) {
+            return;
+        }
+        this.lastWorkState = w;
+
+        this.updateStatus();
+    }
+
+    /**
+     * @public
+     * @param {Buffer} payload a raw /map/ChargerDockInfo message body
+     */
+    handleChargerDockInfo(payload) {
+        const d = EcovacsRobotStateParser.PARSE_CHARGER_DOCK_INFO(payload);
+        if (!d) {
+            return;
+        }
+
+        if (d.dock) {
+            // Stored dock pose (mm, rad, SLAM frame). Used to place the charger on the map.
+            this.lastDockPose = d.dock;
+        }
+    }
+
+    /**
+     * Derives the StatusStateAttribute from the latest /task/WorkState and /robot/Robot.
+     * WorkState is authoritative while a task runs; otherwise the charger decides
+     * docked vs idle.
+     *
+     * @private
+     */
+    updateStatus() {
+        const WT = EcovacsRobotStateParser.WORK_TYPE;
+        const WS = EcovacsRobotStateParser.WORK_STATE;
+        const VALUE = stateAttrs.StatusStateAttribute.VALUE;
+        const FLAG = stateAttrs.StatusStateAttribute.FLAG;
+        const w = this.lastWorkState;
+        const r = this.lastRobotState;
+
+        let value = VALUE.IDLE;
+        let flag = FLAG.NONE;
+
+        if (w && w.state !== WS.IDLE && w.worktype !== WT.IDLE) {
+            switch (w.worktype) {
+                case WT.RETURN:
+                    value = VALUE.RETURNING;
+                    break;
+                case WT.GOTO:
+                    value = VALUE.MOVING;
+                    flag = FLAG.TARGET;
+                    break;
+                case WT.RELOCATION:
+                    value = VALUE.MOVING;
+                    break;
+                case WT.REMOTE_CONTROL:
+                    value = VALUE.MANUAL_CONTROL;
+                    break;
+                default:
+                    value = w.state === WS.PAUSED ? VALUE.PAUSED : VALUE.CLEANING;
+                    flag = WORK_TYPE_TO_FLAG[w.worktype] ?? FLAG.NONE;
+            }
+        } else if (r && r.isOnCharger !== 0) {
+            value = VALUE.DOCKED;
+        }
+
+        this.state.upsertFirstMatchingAttribute(new stateAttrs.StatusStateAttribute({
+            value: value,
             flag: flag
         }));
     }
@@ -395,8 +508,17 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
 
     async shutdown() {
         await super.shutdown();
+        if (this.rosLink) {
+            this.rosLink.stop();
+        }
         await this.ecocloud.shutdown();
     }
 }
+
+const WORK_TYPE_TO_FLAG = Object.freeze({
+    [EcovacsRobotStateParser.WORK_TYPE.AREA_CLEAN]: stateAttrs.StatusStateAttribute.FLAG.SEGMENT,
+    [EcovacsRobotStateParser.WORK_TYPE.CUSTOM_CLEAN]: stateAttrs.StatusStateAttribute.FLAG.ZONE,
+    [EcovacsRobotStateParser.WORK_TYPE.CIRCLE_CLEAN]: stateAttrs.StatusStateAttribute.FLAG.SPOT
+});
 
 module.exports = EcovacsX1OmniValetudoRobot;

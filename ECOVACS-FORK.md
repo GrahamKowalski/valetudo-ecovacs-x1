@@ -34,18 +34,39 @@ synthetic tiled fixture.
 
 ## State parser
 
-`backend/lib/robots/ecovacs/EcovacsRobotStateParser.js` decodes the fixed-offset fields of the
-`/robot/Robot` ROS message (pose, `power/Battery`, `power/ChargeState`);
-`EcovacsX1OmniValetudoRobot.handleRobotState()` maps them to a `BatteryStateAttribute`.
-Attachment sensors (waterbox/dustbin/mop) are later in the same message, after variable-length
-arrays, and are a follow-up. Tested in `EcovacsRobotStateParser_test.js`.
+`backend/lib/robots/ecovacs/EcovacsRosMessageDecoder.js` is a generic ROS1 message decoder
+driven by the definition text each publisher sends in its TCPROS header. The definitions we
+rely on are embedded verbatim in `EcovacsRosDefinitions.js` (`robot/Robot`, `task/WorkState`,
+`map/ChargerDockInfo`, captured from the device on 2026-10-26).
 
-## Live acquisition (pending)
+`EcovacsRobotStateParser.js` decodes those three messages in full and reduces them to
+plain fields: pose, battery, charge, dustbin in/out, what sits in the module bay (mop plate,
+vacuum/aromatherapy module, nothing), carpet, bumpers; work type + state; stored dock pose.
+`EcovacsX1OmniValetudoRobot.handleRobotState()` / `handleWorkState()` /
+`handleChargerDockInfo()` map them to `BatteryStateAttribute`, `AttachmentStateAttribute`
+(dustbin, mop; "watertank" means the mop plate, the clean-water tank lives in the station)
+and `StatusStateAttribute` (idle, docked, cleaning, paused, returning, moving, manual).
+Sensor enum values were established by handling the robot while streaming its topics; see
+the research repo's `research/state-stream-findings-2026-10-26.md`. Tested against captured
+messages in `test/lib/robots/ecovacs/res/state/` (LDS scans stripped).
 
-The parsers are fed by `handleMapData()` / `handleRobotState()`. Live acquisition (the backend
-fetching `GetCurrentCompressMap`, `/robot/Robot`, `/map/ChargerDockInfo` over TCPROS itself) is
-the remaining integration step. It was proven out of band with the Python toolkit in the research
-repo's `scripts/`. Until it is wired, `buildMap()` stays a placeholder mock.
+## Live acquisition (ROS link)
+
+`backend/lib/robots/ecovacs/ros/` talks to the robot's own ROS1 graph with no dependencies:
+`EcovacsRosXmlRpcClient` (master/slave XML-RPC), `EcovacsTcpRosClient` (TCPROS subscribe +
+service call, auto-reconnect), `EcovacsTcpRosFramer`, and `EcovacsRosLink`, which subscribes
+to `/robot/Robot` (throttled to 1 Hz), `/task/WorkState`, `/map/ChargerDockInfo` and polls
+`/map/GetCurrentCompressMap` every 30 s, feeding `handleRobotState()` / `handleWorkState()` /
+`handleChargerDockInfo()` / `handleMapData()`. It starts when `ecovacsRosMasterUri` is set in
+the implementation config (`http://127.0.0.1:11311` on the robot). The ROS master only
+listens on localhost, so this path is for the backend running on the robot (post-reflash);
+off-robot development uses the research repo's stream tools. Tested against a fake ROS graph
+in `test/lib/robots/ecovacs/ros/`. Until configured, `buildMap()` stays a placeholder mock and
+`pollState()` keeps using the Ecocloud mock.
+
+Controls are not wired yet. The entry point is the `/task/WorkManage` service (start/stop/
+pause/resume x work type); its live request md5 does not match the firmware dump's definition,
+so the exact request layout still has to be established before the first on-device call.
 
 ## Configuration
 
@@ -60,6 +81,8 @@ secrets. Keep them in the config file only (`/local/` is gitignored for developm
 | `ecovacsTlsKeyPath` / `ecovacsTlsCertPath` | `/etc/ssl/valetudo/ecocloud.{key,crt}` embedded, else unset | Server key/cert. If unset when not embedded, Ecocloud doesn't listen |
 | `ecovacsRequestTimeout` | `500` | P2P request timeout in ms |
 | `ecovacsCaptureDirectory` | unset (off) | If set, every MQTT exchange is recorded there as redacted JSON lines |
+| `ecovacsRosMasterUri` | unset (off) | ROS master to read state and map from directly, e.g. `http://127.0.0.1:11311` on the robot |
+| `ecovacsRosMapPollInterval` | `30000` | ms between `/map/GetCurrentCompressMap` fetches when the ROS link is on |
 | `ecovacsRedactValues` | `{}` | Extra `{name: value}` pairs to mask in logs/captures, e.g. the serial or a user id |
 
 The embedded TLS paths are a convention of this fork, not something the firmware provides.
