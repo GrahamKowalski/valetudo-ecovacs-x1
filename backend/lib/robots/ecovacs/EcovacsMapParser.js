@@ -1,5 +1,5 @@
 const LZMA = require("lzma");
-const { MapLayer, ValetudoMap } = require("../../entities/map");
+const { MapLayer, PointMapEntity, ValetudoMap } = require("../../entities/map");
 
 /**
  * Parses an Ecovacs X1 map/CompressMap payload (as returned by the ROS services
@@ -23,9 +23,12 @@ const { MapLayer, ValetudoMap } = require("../../entities/map");
 class EcovacsMapParser {
     /**
      * @param {Buffer} payload a GetCurrentCompressMap/ManipulateShowMap response payload
+     * @param {object} [poses] optional world poses to add as map entities
+     * @param {{x: number, y: number, theta: number}} [poses.robot] robot pose (mm, rad)
+     * @param {{x: number, y: number, theta: number}} [poses.charger] charger pose (mm, rad)
      * @returns {Promise<import("../../entities/map/ValetudoMap")|null>}
      */
-    static async PARSE(payload) {
+    static async PARSE(payload, poses) {
         if (!Buffer.isBuffer(payload) || payload.length < MIN_HEADER) {
             return null;
         }
@@ -65,7 +68,37 @@ class EcovacsMapParser {
             EcovacsMapParser.BLIT(grid, mapWidth, mapHeight, tile, submapWidth, submapHeight, col * submapWidth, row * submapHeight);
         }
 
-        return EcovacsMapParser.BUILD_MAP(grid, mapWidth, mapHeight, resolutionMm);
+        return EcovacsMapParser.BUILD_MAP(grid, mapWidth, mapHeight, resolutionMm, poses);
+    }
+
+    /**
+     * Converts a world pose (mm, rad; dock at origin) to a Valetudo PointMapEntity.
+     *
+     * The CompressMap is the center window of the SLAM grid, so world (0,0) is the grid
+     * center. No y-flip (world +y maps to grid +y, i.e. downward). Heading theta=0 points
+     * down (grid +y); Valetudo's angle is degrees with 0 = up, so down = 180.
+     *
+     * @param {string} type PointMapEntity.TYPE value
+     * @param {{x: number, y: number, theta: number}} pose world pose in mm and radians
+     * @param {number} width grid width in cells
+     * @param {number} height grid height in cells
+     * @param {number} resolutionMm mm per cell
+     * @param {number} pixelSize Valetudo pixel size in cm
+     * @returns {import("../../entities/map/entities/PointMapEntity")}
+     */
+    static POSE_TO_ENTITY(type, pose, width, height, resolutionMm, pixelSize) {
+        const px = width / 2 + pose.x / resolutionMm;
+        const py = height / 2 + pose.y / resolutionMm;
+        const entity = {
+            type: type,
+            points: [Math.round(px * pixelSize), Math.round(py * pixelSize)]
+        };
+        if (type === PointMapEntity.TYPE.ROBOT_POSITION) {
+            entity.metaData = {
+                angle: ((Math.round(180 + pose.theta * 180 / Math.PI)) % 360 + 360) % 360
+            };
+        }
+        return new PointMapEntity(entity);
     }
 
     /**
@@ -92,6 +125,14 @@ class EcovacsMapParser {
      * Copies a submap tile into the full grid at (dstX, dstY).
      *
      * @private
+     * @param {Buffer} grid
+     * @param {number} gridWidth
+     * @param {number} gridHeight
+     * @param {Buffer} tile
+     * @param {number} tileWidth
+     * @param {number} tileHeight
+     * @param {number} dstX
+     * @param {number} dstY
      */
     static BLIT(grid, gridWidth, gridHeight, tile, tileWidth, tileHeight, dstX, dstY) {
         for (let ty = 0; ty < tileHeight; ty++) {
@@ -112,9 +153,10 @@ class EcovacsMapParser {
      * @param {number} width
      * @param {number} height
      * @param {number} resolutionMm
+     * @param {object} [poses]
      * @returns {import("../../entities/map/ValetudoMap")|null}
      */
-    static BUILD_MAP(grid, width, height, resolutionMm) {
+    static BUILD_MAP(grid, width, height, resolutionMm, poses) {
         const floor = [];
         const wall = [];
         /** @type {Object<number, Array<number>>} */
@@ -164,6 +206,16 @@ class EcovacsMapParser {
         // Valetudo coordinates are in cm; the robot reports the resolution in mm.
         const pixelSize = Math.round(resolutionMm / 10);
 
+        // Robot/charger poses come from separate feeds (/robot/Robot, /map/ChargerDockInfo),
+        // not from the map payload, so they are passed in when available.
+        const entities = [];
+        if (poses?.charger) {
+            entities.push(EcovacsMapParser.POSE_TO_ENTITY(PointMapEntity.TYPE.CHARGER_LOCATION, poses.charger, width, height, resolutionMm, pixelSize));
+        }
+        if (poses?.robot) {
+            entities.push(EcovacsMapParser.POSE_TO_ENTITY(PointMapEntity.TYPE.ROBOT_POSITION, poses.robot, width, height, resolutionMm, pixelSize));
+        }
+
         return new ValetudoMap({
             size: {
                 x: width * pixelSize,
@@ -171,7 +223,7 @@ class EcovacsMapParser {
             },
             pixelSize: pixelSize,
             layers: layers,
-            entities: [] // robot/charger pose not present in this payload; added once captured
+            entities: entities
         });
     }
 }

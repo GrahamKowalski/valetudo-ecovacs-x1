@@ -272,9 +272,10 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
      *
      * @public
      * @param {Buffer} payload
+     * @param {object} [poses] optional robot/charger world poses (from /robot/Robot and /map/ChargerDockInfo)
      */
-    async handleMapData(payload) {
-        const map = await EcovacsMapParser.PARSE(payload);
+    async handleMapData(payload, poses) {
+        const map = await EcovacsMapParser.PARSE(payload, poses);
         if (map) {
             this.state.map = map;
             this.emitMapUpdated();
