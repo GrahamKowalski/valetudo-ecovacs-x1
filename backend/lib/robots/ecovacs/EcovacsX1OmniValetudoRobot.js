@@ -6,6 +6,7 @@ const capabilities = require("./capabilities");
 const Ecocloud = require("../../ecovacs/Ecocloud");
 const EcocloudRecorder = require("../../ecovacs/EcocloudRecorder");
 const EcocloudRedactor = require("../../ecovacs/EcocloudRedactor");
+const EcovacsMapParser = require("./EcovacsMapParser");
 const entities = require("../../entities");
 const fs = require("fs");
 const LinuxWifiScanCapability = require("../common/linuxCapabilities/LinuxWifiScanCapability");
@@ -265,7 +266,24 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
     // }
 
     /**
+     * Parse a raw map/ManipulateShowMap payload and publish it as the current map.
+     * This is the real map path. buildMap() below is a placeholder used until live map
+     * acquisition (the ROS ManipulateShowMap service / cloud onMajorMap) is wired up.
+     *
      * @public
+     * @param {Buffer} payload
+     */
+    async handleMapData(payload) {
+        const map = await EcovacsMapParser.PARSE(payload);
+        if (map) {
+            this.state.map = map;
+            this.emitMapUpdated();
+        }
+    }
+
+    /**
+     * @public
+     * Placeholder mock map, replaced by handleMapData() once map acquisition is implemented.
      */
     buildMap() {
         this.mockMap = {

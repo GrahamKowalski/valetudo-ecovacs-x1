@@ -16,9 +16,21 @@ this fork to upstream.
 - Upstream files modified by this fork:
   - `.gitignore`: added ignores for secrets, device identifiers, captures and firmware dumps.
   - `backend/lib/robots/index.js`: registers the Ecovacs robot implementation.
+  - `backend/package.json`: added the `lzma` dependency (pure JS) for the map parser.
 - All other files under `backend/lib/ecovacs/`, `backend/lib/robots/ecovacs/`,
   `backend/test/lib/ecovacs/`, `backend/test/lib/robots/ecovacs/` and
   `util/generate_ecocloud_tls.js` are new in this fork.
+
+## Map parser
+
+`backend/lib/robots/ecovacs/EcovacsMapParser.js` decodes the X1 `map/ManipulateShowMap`
+payload into a `ValetudoMap`: an LZMA1 blob (Ecovacs truncated header) to an 800x800
+occupancy grid, mapped to floor/wall/segment layers at 5 cm pixel size. The format was
+confirmed by decoding a real capture (see the research repo's map-format note). The parser
+is implemented and tested (`EcovacsMapParser_test.js`, synthetic fixture); live map
+acquisition (calling the service / receiving the map over the Ecocloud channel) is the
+remaining device-side step that will feed `EcovacsX1OmniValetudoRobot.handleMapData()`.
+Until then `buildMap()` stays a placeholder mock.
 
 ## Configuration
 

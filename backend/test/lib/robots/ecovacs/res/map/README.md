@@ -1,16 +1,18 @@
 # X1 map fixtures
 
-Captured map payloads from a real X1, used by `EcovacsMapParser_test.js`. Each fixture is a pair:
+Fixtures for `EcovacsMapParser_test.js`. Each is a pair:
 
-- `<name>.capture.json`: a JSON array of the `EcocloudRecorder` entries (lines from an
-  `ecocloud-*.jsonl` capture) that together make up one map, request and response(s), in order.
-- `<name>.expected.json`: the `ValetudoMap` the parser must produce from it.
+- `<name>.showmap.bin`: a raw `map/ManipulateShowMap` response payload (metadata header
+  plus an LZMA1-compressed occupancy grid, the format `EcovacsMapParser` parses).
+- `<name>.showmap.json`: the `ValetudoMap` the parser must produce from it.
 
-Name fixtures after model, firmware and what they show, e.g. `x1omni_<fw>_two_rooms_docked`.
+`synthetic_x1.showmap.bin` is a small hand-built 24x24 map (two segments, a wall ring, an
+obstacle, and some unsegmented floor). It is synthetic on purpose: real captures are maps
+of a home, so they stay out of git. The payload format matches the device (verified by
+decoding a real capture), so the parser is exercised against the true format without
+committing anyone's floor plan.
 
-## Before committing a capture
+## Adding a real capture
 
-The recorder masks `deviceId`, `mId`, `resourceId`, anything in `ecovacsRedactValues` and
-MAC-shaped strings. It cannot mask identifiers nobody knows about yet, and it does not look
-inside base64/binary payloads. Review every fixture by hand for the serial number, MAC
-addresses, user IDs, tokens, Wi-Fi SSIDs and similar before it goes into git.
+If you add one, confirm it decodes, then **sanitize it**: a real map reveals a home
+layout. Prefer a synthetic or heavily reduced grid for anything committed.
