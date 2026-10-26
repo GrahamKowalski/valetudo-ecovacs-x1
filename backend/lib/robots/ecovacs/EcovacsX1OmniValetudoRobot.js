@@ -7,6 +7,7 @@ const Ecocloud = require("../../ecovacs/Ecocloud");
 const EcocloudRecorder = require("../../ecovacs/EcocloudRecorder");
 const EcocloudRedactor = require("../../ecovacs/EcocloudRedactor");
 const EcovacsMapParser = require("./EcovacsMapParser");
+const EcovacsRobotStateParser = require("./EcovacsRobotStateParser");
 const entities = require("../../entities");
 const fs = require("fs");
 const LinuxWifiScanCapability = require("../common/linuxCapabilities/LinuxWifiScanCapability");
@@ -280,6 +281,31 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
             this.state.map = map;
             this.emitMapUpdated();
         }
+    }
+
+    /**
+     * Parse a /robot/Robot message and update battery and charge state.
+     *
+     * @public
+     * @param {Buffer} payload
+     */
+    handleRobotState(payload) {
+        const s = EcovacsRobotStateParser.PARSE(payload);
+        if (!s) {
+            return;
+        }
+
+        let flag = stateAttrs.BatteryStateAttribute.FLAG.DISCHARGING;
+        if (s.isOnCharger === 1) {
+            flag = s.battery >= 100 ?
+                stateAttrs.BatteryStateAttribute.FLAG.CHARGED :
+                stateAttrs.BatteryStateAttribute.FLAG.CHARGING;
+        }
+
+        this.state.upsertFirstMatchingAttribute(new stateAttrs.BatteryStateAttribute({
+            level: s.battery,
+            flag: flag
+        }));
     }
 
     /**
