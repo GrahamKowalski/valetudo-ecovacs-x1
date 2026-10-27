@@ -56,7 +56,7 @@ flashed in place of the stock one. That involves UART access, a device-specific 
 an in-place rootfs update. The build constraints (the robot's Node 18 / kernel 4.14 runtime),
 the image build, and the on-device deployment are documented in the companion research repo's
 `deploy/RUNBOOK.md`. Treat rooting and reflashing as advanced and reversible only via UART plus
-a backup.
+a backup. Although it's really simple. 
 
 Once running, the backend serves the Valetudo web UI and REST API on port 80 over the LAN, and
 connects to an MQTT broker for Home Assistant autodiscovery.
