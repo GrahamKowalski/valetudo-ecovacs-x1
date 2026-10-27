@@ -59,16 +59,25 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         let tlsKey;
         let tlsCert;
 
+        // Pure-local (ROS) mode: the Ecocloud mock is optional. When the ROS link is
+        // configured, missing TLS certs are not fatal; state and control use the ROS link.
+        const rosConfigured = !!this.implConfig["ecovacsRosMasterUri"];
+        let ecocloudDisabled = false;
+
         if (tlsKeyPath || tlsCertPath) {
             if (!fs.existsSync(tlsKeyPath) || !fs.existsSync(tlsCertPath)) {
-                throw new Error(`Ecocloud TLS key/certificate not found at "${tlsKeyPath}" and "${tlsCertPath}". Unable to mock the cloud.`);
+                if (!rosConfigured) {
+                    throw new Error(`Ecocloud TLS key/certificate not found at "${tlsKeyPath}" and "${tlsCertPath}". Unable to mock the cloud.`);
+                }
+                Logger.info(`Ecocloud TLS key/certificate not found at "${tlsKeyPath}" and "${tlsCertPath}"; running ROS-only, cloud mock disabled.`);
+                ecocloudDisabled = true;
+            } else {
+                tlsKey = fs.readFileSync(tlsKeyPath);
+                tlsCert = fs.readFileSync(tlsCertPath);
             }
-
-            tlsKey = fs.readFileSync(tlsKeyPath);
-            tlsCert = fs.readFileSync(tlsCertPath);
         }
 
-        this.ecocloud = new Ecocloud({
+        this.ecocloud = ecocloudDisabled ? null : new Ecocloud({
             deviceId: this.deviceId,
             mId: this.mId,
             resourceId: this.resourceId,
@@ -176,6 +185,12 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
     }
 
     async pollState() {
+        // With the ROS link active, the state attributes are kept current by the topic
+        // subscriptions (handleRobotState/handleWorkState), so there is nothing to poll.
+        if (this.rosLink) {
+            return this.state;
+        }
+
         const data = await this.ecocloud.send(Ecocloud.MESSAGE_TYPES.P2P, "getInfo", ["getStationState", "getBattery", "getChargeState", "getStats"]);
 
         this.parseAndUpdateState(data);
@@ -616,7 +631,9 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         if (this.rosLink) {
             this.rosLink.stop();
         }
-        await this.ecocloud.shutdown();
+        if (this.ecocloud) {
+            await this.ecocloud.shutdown();
+        }
     }
 }
 
