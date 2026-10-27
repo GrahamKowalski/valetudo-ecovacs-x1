@@ -6,6 +6,7 @@ const capabilities = require("./capabilities");
 const Ecocloud = require("../../ecovacs/Ecocloud");
 const EcocloudRecorder = require("../../ecovacs/EcocloudRecorder");
 const EcocloudRedactor = require("../../ecovacs/EcocloudRedactor");
+const EcovacsCommandFactory = require("./EcovacsCommandFactory");
 const EcovacsMapParser = require("./EcovacsMapParser");
 const EcovacsRobotStateParser = require("./EcovacsRobotStateParser");
 const EcovacsRosLink = require("./ros/EcovacsRosLink");
@@ -15,6 +16,7 @@ const LinuxWifiScanCapability = require("../common/linuxCapabilities/LinuxWifiSc
 const Logger = require("../../Logger");
 const Tools = require("../../utils/Tools");
 const ValetudoRobot = require("../../core/ValetudoRobot");
+const ValetudoSelectionPreset = require("../../entities/core/ValetudoSelectionPreset");
 const { MapLayer, PointMapEntity, ValetudoMap } = require("../../entities/map");
 const stateAttrs = entities.state.attributes;
 
@@ -90,6 +92,33 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         this.registerCapability(new capabilities.EcovacsWifiConfigurationCapability({
             robot: this,
             networkInterface: "wlan0"
+        }));
+
+        this.commandFactory = new EcovacsCommandFactory();
+
+        // Control via the robot's own ROS graph (/task/WorkManage, /setting/SettingManage,
+        // /audio/AudioPlay). Active once the ROS link is up (ecovacsRosMasterUri set).
+        this.registerCapability(new capabilities.EcovacsBasicControlCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsLocateCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsGoToLocationCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsMapSegmentationCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsFanSpeedControlCapability({
+            robot: this,
+            presets: [
+                new ValetudoSelectionPreset({ name: "low", value: { mode: 0, isSilent: 1 } }),
+                new ValetudoSelectionPreset({ name: "medium", value: { mode: 0, isSilent: 0 } }),
+                new ValetudoSelectionPreset({ name: "high", value: { mode: 1, isSilent: 0 } }),
+                new ValetudoSelectionPreset({ name: "max", value: { mode: 2, isSilent: 0 } })
+            ]
+        }));
+        this.registerCapability(new capabilities.EcovacsWaterUsageControlCapability({
+            robot: this,
+            presets: [
+                new ValetudoSelectionPreset({ name: "low", value: 0 }),
+                new ValetudoSelectionPreset({ name: "medium", value: 1 }),
+                new ValetudoSelectionPreset({ name: "high", value: 2 }),
+                new ValetudoSelectionPreset({ name: "max", value: 3 })
+            ]
         }));
 
         if (this.config.get("embedded") === true) {
@@ -504,6 +533,67 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
                 angle: 180
             }
         });
+    }
+
+    /**
+     * Calls a ROS service described by the command factory. Throws if the ROS control
+     * link is not active (it is only available when the backend can reach the master,
+     * i.e. running on the robot with ecovacsRosMasterUri configured).
+     *
+     * @param {{service: string, request: Buffer, md5sum: string}} command
+     * @returns {Promise<Buffer>} the response body
+     */
+    async callRosService(command) {
+        if (!this.rosLink) {
+            throw new Error("ROS control link not active; set implementationSpecificConfig.ecovacsRosMasterUri");
+        }
+
+        return this.rosLink.callService(command.service, command.request, command.md5sum);
+    }
+
+    /**
+     * Publishes a one-shot message to a topic the robot subscribes to (e.g. the locate sound).
+     *
+     * @param {{topic: string, type: string, payload: Buffer}} command
+     * @returns {Promise<void>}
+     */
+    async publishRosMessage(command) {
+        if (!this.rosLink) {
+            throw new Error("ROS control link not active; set implementationSpecificConfig.ecovacsRosMasterUri");
+        }
+
+        await this.rosLink.publish(command.topic, command.type, command.payload);
+    }
+
+    /**
+     * Read-modify-write a setting: GET the current SettingData, apply the byte writes,
+     * SET it back, so unrelated settings are preserved.
+     *
+     * @param {number} settingType
+     * @param {Array<{offset: number, value: number}>} writes
+     * @returns {Promise<void>}
+     */
+    async applySetting(settingType, writes) {
+        const current = await this.callRosService(this.commandFactory.getSetting(settingType));
+        await this.callRosService(this.commandFactory.buildSettingSet(settingType, current, writes));
+    }
+
+    /**
+     * Grid geometry for coordinate conversion (GoTo). Taken from the current map when
+     * available, else the X1's fixed 800x800 @ 50 mm (5 cm pixels).
+     *
+     * @returns {{width: number, height: number, resolutionMm: number, pixelSize: number}}
+     */
+    getMapGeometry() {
+        const map = this.state.map;
+        const pixelSize = (map && map.pixelSize) ? map.pixelSize : 5;
+
+        return {
+            width: map ? Math.round(map.size.x / pixelSize) : 800,
+            height: map ? Math.round(map.size.y / pixelSize) : 800,
+            resolutionMm: 50,
+            pixelSize: pixelSize
+        };
     }
 
     async shutdown() {

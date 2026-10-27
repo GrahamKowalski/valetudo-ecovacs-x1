@@ -90,6 +90,29 @@ class EcovacsRosLink {
     }
 
     /**
+     * @param {string} service
+     * @param {Buffer} request
+     * @param {string} [md5sum]
+     * @returns {Promise<Buffer>} the response body
+     */
+    callService(service, request, md5sum) {
+        return this.client.callService(service, request, {
+            md5sum: md5sum ?? "*",
+            timeoutMs: 15000
+        });
+    }
+
+    /**
+     * @param {string} topic
+     * @param {string} type
+     * @param {Buffer} payload
+     * @returns {Promise<void>}
+     */
+    async publish(topic, type, payload) {
+        await this.client.publish(topic, type, payload, {});
+    }
+
+    /**
      * Fetches the current map (type 0, mapid 0) and hands it to the robot together
      * with the latest robot and charger poses.
      *

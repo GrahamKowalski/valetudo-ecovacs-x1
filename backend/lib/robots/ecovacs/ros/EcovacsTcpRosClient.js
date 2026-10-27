@@ -1,5 +1,6 @@
 const EcovacsRosXmlRpcClient = require("./EcovacsRosXmlRpcClient");
 const EcovacsTcpRosFramer = require("./EcovacsTcpRosFramer");
+const http = require("http");
 const Logger = require("../../../Logger");
 const net = require("net");
 
@@ -217,6 +218,154 @@ class EcovacsTcpRosClient {
                 reject(err);
             });
         });
+    }
+
+    /**
+     * Publishes one message to a topic the robot subscribes to, by briefly registering as
+     * a real TCPROS publisher. It first steals the existing publisher's md5sum and
+     * definition (so the subscriber accepts us), stands up a TCPROS server and an XML-RPC
+     * node API, registers with the master, serves the payload to subscribers for a short
+     * window, then unregisters. Bind host is localhost (this runs on the robot).
+     *
+     * @param {string} topic
+     * @param {string} type
+     * @param {Buffer} payload serialized message body
+     * @param {object} [options]
+     * @param {number} [options.durationMs] how long to stay advertised (default 3000)
+     * @returns {Promise<number>} number of subscribers served
+     */
+    async publish(topic, type, payload, options = {}) {
+        const host = "127.0.0.1";
+        const durationMs = options.durationMs ?? 3000;
+        const header = await this.stealPublisherHeader(topic, type);
+
+        let served = 0;
+        const tcpServer = net.createServer(socket => {
+            const framer = new EcovacsTcpRosFramer(() => {
+                socket.write(EcovacsTcpRosClient.ENCODE_HEADER({
+                    callerid: this.callerId,
+                    topic: topic,
+                    type: type,
+                    md5sum: header.md5sum,
+                    message_definition: header.message_definition,
+                    latching: "1",
+                    tcp_nodelay: "1"
+                }));
+                socket.write(Buffer.concat([u32(payload.length), payload]));
+                served++;
+            });
+            socket.on("data", chunk => {
+                framer.push(chunk);
+            });
+            socket.on("error", () => { /* subscriber dropped */ });
+        });
+        const rpcServer = http.createServer((req, res) => {
+            const chunks = [];
+            req.on("data", c => {
+                chunks.push(c);
+            });
+            req.on("end", () => {
+                const method = (Buffer.concat(chunks).toString().match(/<methodName>(\w+)<\/methodName>/) || [])[1];
+                let value;
+                if (method === "requestTopic") {
+                    value = [1, "", ["TCPROS", host, /** @type {import("net").AddressInfo} */ (tcpServer.address()).port]];
+                } else if (method === "getPid") {
+                    value = [1, "", process.pid];
+                } else {
+                    value = [1, "", 0];
+                }
+                res.setHeader("Content-Type", "text/xml");
+                res.end(EcovacsTcpRosClient.ENCODE_XMLRPC_RESPONSE(value));
+            });
+        });
+
+        await new Promise(resolve => {
+            tcpServer.listen(0, host, () => {
+                resolve();
+            });
+        });
+        await new Promise(resolve => {
+            rpcServer.listen(0, host, () => {
+                resolve();
+            });
+        });
+        const nodeUri = `http://${host}:${/** @type {import("net").AddressInfo} */ (rpcServer.address()).port}/`;
+
+        try {
+            const [code, status] = await this.master.call("registerPublisher", [this.callerId, topic, type, nodeUri]);
+            if (code !== 1) {
+                throw new Error(`registerPublisher ${topic} failed: ${status}`);
+            }
+            await new Promise(resolve => {
+                setTimeout(resolve, durationMs);
+            });
+        } finally {
+            try {
+                await this.master.call("unregisterPublisher", [this.callerId, topic, nodeUri]);
+            } catch (e) {
+                Logger.debug(`unregisterPublisher ${topic}: ${e.message}`);
+            }
+            tcpServer.close();
+            rpcServer.close();
+        }
+
+        return served;
+    }
+
+    /**
+     * Connects to the topic's current publisher as a subscriber just long enough to read
+     * its connection header, to reuse its md5sum and message_definition when we publish.
+     *
+     * @private
+     * @param {string} topic
+     * @param {string} type
+     * @returns {Promise<{md5sum: string, message_definition: string}>}
+     */
+    async stealPublisherHeader(topic, type) {
+        const pub = await this.lookupPublisher(topic);
+        const [code, status, proto] = await new EcovacsRosXmlRpcClient(pub.nodeUri).call("requestTopic", [this.callerId, topic, [["TCPROS"]]]);
+        if (code !== 1) {
+            throw new Error(`requestTopic ${topic} failed: ${status}`);
+        }
+
+        return new Promise((resolve, reject) => {
+            const socket = net.createConnection({ host: proto[1], port: proto[2] });
+            const timer = setTimeout(() => {
+                socket.destroy(new Error(`steal header ${topic} timed out`));
+            }, 5000);
+            const framer = new EcovacsTcpRosFramer(frame => {
+                clearTimeout(timer);
+                const h = EcovacsTcpRosClient.DECODE_HEADER(frame);
+                socket.end();
+                resolve({ md5sum: h.md5sum ?? "*", message_definition: h.message_definition ?? "" });
+            });
+            socket.on("connect", () => {
+                socket.write(EcovacsTcpRosClient.ENCODE_HEADER({
+                    callerid: `${this.callerId}_probe`,
+                    topic: topic,
+                    md5sum: "*",
+                    type: type,
+                    tcp_nodelay: "1"
+                }));
+            });
+            socket.on("data", chunk => {
+                framer.push(chunk);
+            });
+            socket.on("error", err => {
+                clearTimeout(timer);
+                reject(err);
+            });
+        });
+    }
+
+    /**
+     * @param {any} value
+     * @returns {string}
+     */
+    static ENCODE_XMLRPC_RESPONSE(value) {
+        return "<?xml version=\"1.0\"?><methodResponse><params><param>" +
+            EcovacsRosXmlRpcClient.ENCODE_CALL("x", [value]).match(/<param>([\s\S]*)<\/param>/)[1] +
+            "</param></params></methodResponse>";
     }
 
     /**

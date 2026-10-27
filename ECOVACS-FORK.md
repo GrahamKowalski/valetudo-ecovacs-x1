@@ -68,6 +68,29 @@ Controls are not wired yet. The entry point is the `/task/WorkManage` service (s
 pause/resume x work type); its live request md5 does not match the firmware dump's definition,
 so the exact request layout still has to be established before the first on-device call.
 
+## Control capabilities
+
+`backend/lib/robots/ecovacs/EcovacsCommandFactory.js` builds the exact request bytes for the
+robot's control services/topics, from layouts reverse-engineered on the device (the live
+layouts differ from the firmware dump, so they are reconstructed and covered by byte-exact
+tests):
+
+- `/task/WorkManage` (service): start, stop, pause, resume, home (return), area clean by
+  segment id (CleanWorkData.ids), go to an (x,y) point (ExtraWorkData.poses @ byte 34).
+- `/setting/SettingManage` (service): read-modify-write of fan level (byte 22) and water
+  level (byte 20), preserving other settings.
+- `/audio/AudioPlay` (publish): locate / "I am here" (audio id 31).
+
+Capabilities in `capabilities/`: `EcovacsBasicControlCapability`, `EcovacsLocateCapability`,
+`EcovacsGoToLocationCapability` (cm->mm inverse of the map transform),
+`EcovacsMapSegmentationCapability`, `EcovacsFanSpeedControlCapability` (low/medium/high/max),
+`EcovacsWaterUsageControlCapability` (low/medium/high/max). They call the robot's
+`callRosService` / `publishRosMessage` / `applySetting`, which go through `EcovacsRosLink` and
+the TCPROS client (`EcovacsTcpRosClient` gained a `publish()` that briefly registers as a real
+ROS publisher). All inactive until the ROS link is up (`ecovacsRosMasterUri`), i.e. on the robot.
+Commands use md5sum "*" so the reconstructed layouts need no checksum match. Tested offline
+against byte-exact fixtures and a mocked robot.
+
 ## Configuration
 
 Set in `robot.implementationSpecificConfig` of the Valetudo config. Device identifiers are

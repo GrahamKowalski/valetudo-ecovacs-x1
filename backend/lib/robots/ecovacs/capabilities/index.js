@@ -3,5 +3,12 @@
 // Imported unmodified from ValetudoEV commit d7a48bca; later changes are recorded in git history.
 
 module.exports = {
+    EcovacsBasicControlCapability: require("./EcovacsBasicControlCapability"),
+
+    EcovacsFanSpeedControlCapability: require("./EcovacsFanSpeedControlCapability"),
+    EcovacsGoToLocationCapability: require("./EcovacsGoToLocationCapability"),
+    EcovacsLocateCapability: require("./EcovacsLocateCapability"),
+    EcovacsMapSegmentationCapability: require("./EcovacsMapSegmentationCapability"),
+    EcovacsWaterUsageControlCapability: require("./EcovacsWaterUsageControlCapability"),
     EcovacsWifiConfigurationCapability: require("./EcovacsWifiConfigurationCapability"),
 };
