@@ -8,8 +8,8 @@ const Logger = require("../../../Logger");
  * reflash-free, cloud-free data path; it needs the backend to reach the ROS master
  * (127.0.0.1:11311 when running on the robot).
  *
- * The robot object only needs handleRobotState/handleWorkState/handleChargerDockInfo/
- * handleMapData and a lastRobotState/lastDockPose, which EcovacsX1OmniValetudoRobot has.
+ * The robot object needs the handle*() callbacks used below plus lastRobotState/
+ * lastDockPose, which EcovacsX1OmniValetudoRobot has.
  */
 class EcovacsRosLink {
     /**
@@ -69,6 +69,18 @@ class EcovacsRosLink {
                     this.robot.handleChargerDockInfo(body);
                 },
                 onError: this.logError(R.CHARGER_DOCK_INFO.topic)
+            }),
+            this.simpleSubscription(R.FAN_MODE, body => {
+                this.robot.handleFanMode(body);
+            }),
+            this.simpleSubscription(R.WATER_LEVEL, body => {
+                this.robot.handleWaterLevel(body);
+            }),
+            this.simpleSubscription(R.TASK_STATE_REPORT, body => {
+                this.robot.handleTaskStateReport(body);
+            }),
+            this.simpleSubscription(R.TASK_RESULT, body => {
+                this.robot.handleTaskResult(body);
             })
         );
 
@@ -134,6 +146,21 @@ class EcovacsRosLink {
         } finally {
             this.mapPollInFlight = false;
         }
+    }
+
+    /**
+     * @private
+     * @param {{topic: string, md5sum: string}} def
+     * @param {(body: Buffer) => void} onMessage
+     */
+    simpleSubscription(def, onMessage) {
+        return this.client.subscribe(def.topic, {
+            onHeader: h => {
+                this.checkMd5(def, h);
+            },
+            onMessage: onMessage,
+            onError: this.logError(def.topic)
+        });
     }
 
     /**

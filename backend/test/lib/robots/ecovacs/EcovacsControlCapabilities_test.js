@@ -27,6 +27,13 @@ function makeRobot() {
         readSetting: async (settingType, offset) => {
             return robot.settingBytes[`${settingType}:${offset}`] ?? 0;
         },
+        presetUpdates: [],
+        updateFanSpeedPreset: (mode, isSilent) => {
+            robot.presetUpdates.push({ fan: { mode: mode, isSilent: isSilent } });
+        },
+        updateWaterGradePreset: level => {
+            robot.presetUpdates.push({ water: level });
+        },
         getMapGeometry: () => {
             return { width: 800, height: 800, resolutionMm: 50, pixelSize: 5 };
         }

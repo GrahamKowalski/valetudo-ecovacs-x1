@@ -25,6 +25,9 @@ class EcovacsFanSpeedControlCapability extends FanSpeedControlCapability {
             { offset: EcovacsCommandFactory.SETTING_OFFSET.FAN_MODE, value: mode },
             { offset: EcovacsCommandFactory.SETTING_OFFSET.FAN_IS_SILENT, value: isSilent }
         ]);
+
+        // The /setting/FanMode topic echoes the change; reflect it right away as well.
+        this.robot.updateFanSpeedPreset(mode, isSilent);
     }
 }
 

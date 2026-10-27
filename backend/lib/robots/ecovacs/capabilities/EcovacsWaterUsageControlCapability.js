@@ -23,6 +23,9 @@ class EcovacsWaterUsageControlCapability extends WaterUsageControlCapability {
         await this.robot.applySetting(EcovacsCommandFactory.SETTING_TYPE.WATER_LEVEL, [
             { offset: EcovacsCommandFactory.SETTING_OFFSET.WATER_LEVEL, value: matched.value }
         ]);
+
+        // The /setting/WaterLevel topic echoes the change; reflect it right away as well.
+        this.robot.updateWaterGradePreset(matched.value);
     }
 }
 

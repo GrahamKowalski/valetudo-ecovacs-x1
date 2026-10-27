@@ -303,6 +303,67 @@ MSG: map/ChargerDock
 float32 x
 float32 y
 float32 theta`
+    }),
+    FAN_MODE: Object.freeze({
+        topic: "/setting/FanMode",
+        type: "setting/FanMode",
+        md5sum: "73696a8e9688f16f90212b9067d55afb",
+        text: `uint8 FAN_MODE_LOW = 0
+uint8 FAN_MODE_HIGH = 1
+uint8 FAN_MODE_HIGH_HIGH = 2
+
+uint8 mode
+uint8 isSilent`
+    }),
+    WATER_LEVEL: Object.freeze({
+        topic: "/setting/WaterLevel",
+        type: "setting/WaterLevel",
+        md5sum: "c2d2edce3d88bf9dd1e01e9932b567b3",
+        text: `uint8 WATER_LEVEL_LOW = 0
+uint8 WATER_LEVEL_MIDDLE = 1
+uint8 WATER_LEVEL_HIGH = 2
+uint8 WATER_LEVEL_ULTRAHIGH = 3
+
+uint8 level`
+    }),
+    TASK_STATE_REPORT: Object.freeze({
+        topic: "/task/TaskStateReport",
+        type: "task/TaskStateReport",
+        md5sum: "7f1ec70d8debe1dd6d29d69cc9d76ab4",
+        text: `# tasktype is WorkType
+uint8 tasktype
+# stateType is TaskStateType
+uint32 stateType
+# state for every type.
+uint32 state`
+    }),
+    TASK_RESULT: Object.freeze({
+        topic: "/task/TaskResult",
+        type: "task/TaskResult",
+        md5sum: "81d24bd15b1029477f43deb3f021e6d6",
+        text: `#typed enum
+uint8 GOTO = 0
+uint8 PATROL = 1
+uint8 REMOTE = 2
+uint8 CLEAN = 3
+uint8 RETURN = 4
+uint8 AROMA = 5
+uint8 FASTBUILD = 6
+uint8 FINDPET = 7
+uint8 type
+
+#typed enum
+uint8 TASK_SUCCESS = 0
+uint8 TASK_FAILD = 1
+uint8 TASK_WORKING = 2
+uint8 RETURN_FAILD_FIND_CHARGE = 3
+uint8 RETURN_FAILD_CANNOT_FIND_CHARGE = 4
+uint8 AROMA_SUCCESS_TO_RETURN = 5
+uint8 FAILED_FIND_AREA = 6
+
+uint8 result
+
+string data`
     })
 });
 

@@ -15,6 +15,9 @@ const EcovacsRosMessageDecoder = require("./EcovacsRosMessageDecoder");
  *   carpet[0].value    1 = carpet detected
  * /task/WorkState (on change): worktype (WORK_TYPE) + state (WORK_STATE)
  * /map/ChargerDockInfo (every 20 s): stored dock pose when hasfindDock is set
+ * /setting/FanMode, /setting/WaterLevel (on change): current vacuum power / water presets
+ * /task/TaskStateReport: stateType 3 state 1 = the robot reports itself stuck
+ * /task/TaskResult: how the last task ended (TASK_RESULT)
  */
 class EcovacsRobotStateParser {
     /**
@@ -100,6 +103,64 @@ class EcovacsRobotStateParser {
             return null;
         }
     }
+
+    /**
+     * @param {Buffer} buf a /setting/FanMode message body
+     * @returns {{mode: number, isSilent: number}|null}
+     */
+    static PARSE_FAN_MODE(buf) {
+        return decodeOrNull(FAN_MODE_DECODER, buf, m => {
+            return { mode: m.mode, isSilent: m.isSilent };
+        });
+    }
+
+    /**
+     * @param {Buffer} buf a /setting/WaterLevel message body
+     * @returns {{level: number}|null}
+     */
+    static PARSE_WATER_LEVEL(buf) {
+        return decodeOrNull(WATER_LEVEL_DECODER, buf, m => {
+            return { level: m.level };
+        });
+    }
+
+    /**
+     * @param {Buffer} buf a /task/TaskStateReport message body
+     * @returns {{tasktype: number, stateType: number, state: number}|null}
+     */
+    static PARSE_TASK_STATE_REPORT(buf) {
+        return decodeOrNull(TASK_STATE_REPORT_DECODER, buf, m => {
+            return { tasktype: m.tasktype, stateType: m.stateType, state: m.state };
+        });
+    }
+
+    /**
+     * @param {Buffer} buf a /task/TaskResult message body
+     * @returns {{type: number, result: number, data: string}|null}
+     */
+    static PARSE_TASK_RESULT(buf) {
+        return decodeOrNull(TASK_RESULT_DECODER, buf, m => {
+            return { type: m.type, result: m.result, data: m.data };
+        });
+    }
+}
+
+/**
+ * @param {EcovacsRosMessageDecoder} decoder
+ * @param {Buffer} buf
+ * @param {(m: object) => object} pick
+ * @returns {object|null}
+ */
+function decodeOrNull(decoder, buf, pick) {
+    if (!Buffer.isBuffer(buf)) {
+        return null;
+    }
+
+    try {
+        return pick(decoder.decode(buf).message);
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -167,6 +228,68 @@ EcovacsRobotStateParser.WORK_STATE = Object.freeze({
 });
 
 /**
+ * task/WorkCauseType (WorkState.workcause: why the current work state was entered)
+ *
+ * @enum {number}
+ */
+EcovacsRobotStateParser.WORK_CAUSE = Object.freeze({
+    NONE: 0,
+    MANUAL: 1,
+    SCHEDULE: 2,
+    WORK_COMPLETE: 3,
+    LOW_BATTERY: 4,
+    BLOCK_TIME: 5,
+    CONTINUE: 6,
+    WORK_INTERRUPT: 7,
+    ALERT: 8,
+    APP_MANUAL: 9
+});
+
+/**
+ * task/TaskStateType (TaskStateReport.stateType; state 1 = on, 0 = off)
+ *
+ * @enum {number}
+ */
+EcovacsRobotStateParser.TASK_STATE_TYPE = Object.freeze({
+    RETURN_ENTER_TO_FRONT_OF_CHARGER: 0,
+    CLEAN_FINISH_SINGLE_AREA: 1,
+    CLEAN_AI_DETECT_TO_CONTROL_BRUSH: 2,
+    CLEAN_ROBOT_IS_STUCK: 3,
+    OFF_ROBOT_WATER_PUMP: 4
+});
+
+/**
+ * task/TaskResult.type
+ *
+ * @enum {number}
+ */
+EcovacsRobotStateParser.TASK_RESULT_TYPE = Object.freeze({
+    GOTO: 0,
+    PATROL: 1,
+    REMOTE: 2,
+    CLEAN: 3,
+    RETURN: 4,
+    AROMA: 5,
+    FASTBUILD: 6,
+    FINDPET: 7
+});
+
+/**
+ * task/TaskResult.result
+ *
+ * @enum {number}
+ */
+EcovacsRobotStateParser.TASK_RESULT = Object.freeze({
+    SUCCESS: 0,
+    FAILED: 1,
+    WORKING: 2,
+    RETURN_FAILED_FIND_CHARGE: 3,
+    RETURN_FAILED_CANNOT_FIND_CHARGE: 4,
+    AROMA_SUCCESS_TO_RETURN: 5,
+    FAILED_FIND_AREA: 6
+});
+
+/**
  * @param {Array<{type: number, value: number}>} arr
  * @returns {number|null}
  */
@@ -190,6 +313,10 @@ function valueOfType(arr, type) {
 const ROBOT_DECODER = new EcovacsRosMessageDecoder(EcovacsRosDefinitions.ROBOT);
 const WORK_STATE_DECODER = new EcovacsRosMessageDecoder(EcovacsRosDefinitions.WORK_STATE);
 const CHARGER_DOCK_INFO_DECODER = new EcovacsRosMessageDecoder(EcovacsRosDefinitions.CHARGER_DOCK_INFO);
+const FAN_MODE_DECODER = new EcovacsRosMessageDecoder(EcovacsRosDefinitions.FAN_MODE);
+const WATER_LEVEL_DECODER = new EcovacsRosMessageDecoder(EcovacsRosDefinitions.WATER_LEVEL);
+const TASK_STATE_REPORT_DECODER = new EcovacsRosMessageDecoder(EcovacsRosDefinitions.TASK_STATE_REPORT);
+const TASK_RESULT_DECODER = new EcovacsRosMessageDecoder(EcovacsRosDefinitions.TASK_RESULT);
 
 const MIN_LENGTH = 16;
 

@@ -11,11 +11,13 @@ const EcovacsMapParser = require("./EcovacsMapParser");
 const EcovacsRobotStateParser = require("./EcovacsRobotStateParser");
 const EcovacsRosLink = require("./ros/EcovacsRosLink");
 const entities = require("../../entities");
+const ErrorStateValetudoEvent = require("../../valetudo_events/events/ErrorStateValetudoEvent");
 const fs = require("fs");
 const LinuxWifiScanCapability = require("../common/linuxCapabilities/LinuxWifiScanCapability");
 const Logger = require("../../Logger");
 const Tools = require("../../utils/Tools");
 const ValetudoRobot = require("../../core/ValetudoRobot");
+const ValetudoRobotError = require("../../entities/core/ValetudoRobotError");
 const ValetudoSelectionPreset = require("../../entities/core/ValetudoSelectionPreset");
 const { MapLayer, PointMapEntity, ValetudoMap } = require("../../entities/map");
 const stateAttrs = entities.state.attributes;
@@ -257,6 +259,10 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
             });
             this.rosLink.start();
             Logger.info(`ROS link started against ${this.implConfig["ecovacsRosMasterUri"]}`);
+
+            // The /setting/* topics only publish on change, so read the current presets once
+            // via SettingManage GET. The master can be slow right after boot, so retry a bit.
+            this.refreshSettingsWithRetry(SETTINGS_REFRESH_ATTEMPTS);
         }
 
         // Only state whether they're set. The values are device secrets and logs tend to get shared
@@ -354,6 +360,12 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         }
         this.lastRobotState = s;
 
+        if (s.isOnCharger !== 0 && this.lastError) {
+            // Back on the dock (by itself or carried there): the error is resolved.
+            this.lastError = null;
+            this.lastErrorCode = "";
+        }
+
         let flag = stateAttrs.BatteryStateAttribute.FLAG.DISCHARGING;
         if (s.isOnCharger !== 0) {
             flag = s.battery >= 100 ?
@@ -398,7 +410,18 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         if (!w) {
             return;
         }
+        const previous = this.lastWorkState;
         this.lastWorkState = w;
+
+        const WS = EcovacsRobotStateParser.WORK_STATE;
+        if (w.state === WS.RUNNING && (!previous || previous.state !== WS.RUNNING)) {
+            // A task (re)started: whatever went wrong before is over.
+            this.lastError = null;
+            this.lastErrorCode = "";
+        } else if (w.state === WS.IDLE && w.workcause === EcovacsRobotStateParser.WORK_CAUSE.ALERT && !this.lastError) {
+            this.setError(ERRORS.ALERT_STOP, "workcause " + w.workcause);
+            return;
+        }
 
         this.updateStatus();
     }
@@ -420,9 +443,197 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
     }
 
     /**
+     * @public
+     * @param {Buffer} payload a raw /setting/FanMode message body
+     */
+    handleFanMode(payload) {
+        const f = EcovacsRobotStateParser.PARSE_FAN_MODE(payload);
+        if (!f) {
+            return;
+        }
+
+        this.updateFanSpeedPreset(f.mode, f.isSilent);
+    }
+
+    /**
+     * @public
+     * @param {Buffer} payload a raw /setting/WaterLevel message body
+     */
+    handleWaterLevel(payload) {
+        const w = EcovacsRobotStateParser.PARSE_WATER_LEVEL(payload);
+        if (!w) {
+            return;
+        }
+
+        this.updateWaterGradePreset(w.level);
+    }
+
+    /**
+     * Stores the fan preset matching a FanMode {mode, isSilent} pair as the current
+     * FAN_SPEED state attribute. Unknown pairs are ignored (attribute left as is).
+     *
+     * @public
+     * @param {number} mode
+     * @param {number} isSilent
+     */
+    updateFanSpeedPreset(mode, isSilent) {
+        const cap = this.capabilities[capabilities.EcovacsFanSpeedControlCapability.TYPE];
+        const preset = cap?.presets.find(p => {
+            return p.value.mode === mode && p.value.isSilent === isSilent;
+        });
+        if (!preset) {
+            return;
+        }
+
+        this.state.upsertFirstMatchingAttribute(new stateAttrs.PresetSelectionStateAttribute({
+            type: stateAttrs.PresetSelectionStateAttribute.TYPE.FAN_SPEED,
+            value: preset.name
+        }));
+    }
+
+    /**
+     * @public
+     * @param {number} level WaterLevel.level 0..3
+     */
+    updateWaterGradePreset(level) {
+        const cap = this.capabilities[capabilities.EcovacsWaterUsageControlCapability.TYPE];
+        const preset = cap?.presets.find(p => {
+            return p.value === level;
+        });
+        if (!preset) {
+            return;
+        }
+
+        this.state.upsertFirstMatchingAttribute(new stateAttrs.PresetSelectionStateAttribute({
+            type: stateAttrs.PresetSelectionStateAttribute.TYPE.WATER_GRADE,
+            value: preset.name
+        }));
+    }
+
+    /**
+     * Reads the fan and water settings through SettingManage GET and stores them as
+     * preset attributes. Used once at startup since the topics are not latched.
+     *
+     * @public
+     * @returns {Promise<void>}
+     */
+    async refreshSettings() {
+        const O = EcovacsCommandFactory.SETTING_OFFSET;
+        const T = EcovacsCommandFactory.SETTING_TYPE;
+
+        const fan = await this.callRosService(this.commandFactory.getSetting(T.FAN_LEVEL));
+        const mode = EcovacsCommandFactory.READ_SETTING_BYTE(fan, O.FAN_MODE);
+        const isSilent = EcovacsCommandFactory.READ_SETTING_BYTE(fan, O.FAN_IS_SILENT);
+        if (mode !== null && isSilent !== null) {
+            this.updateFanSpeedPreset(mode, isSilent);
+        }
+
+        const water = await this.callRosService(this.commandFactory.getSetting(T.WATER_LEVEL));
+        const level = EcovacsCommandFactory.READ_SETTING_BYTE(water, O.WATER_LEVEL);
+        if (level !== null) {
+            this.updateWaterGradePreset(level);
+        }
+    }
+
+    /**
+     * @private
+     * @param {number} attemptsLeft
+     */
+    refreshSettingsWithRetry(attemptsLeft) {
+        const timer = setTimeout(() => {
+            this.refreshSettings().then(() => {
+                Logger.info("ROS settings snapshot read (fan, water)");
+            }).catch(err => {
+                if (attemptsLeft > 1) {
+                    this.refreshSettingsWithRetry(attemptsLeft - 1);
+                } else {
+                    Logger.warn(`ROS settings snapshot failed: ${err.message}`);
+                }
+            });
+        }, SETTINGS_REFRESH_DELAY_MS);
+        timer.unref();
+    }
+
+    /**
+     * The robot reports itself stuck through TaskStateReport (stateType 3, state 1 on / 0 off).
+     *
+     * @public
+     * @param {Buffer} payload a raw /task/TaskStateReport message body
+     */
+    handleTaskStateReport(payload) {
+        const r = EcovacsRobotStateParser.PARSE_TASK_STATE_REPORT(payload);
+        if (!r) {
+            return;
+        }
+
+        if (r.stateType === EcovacsRobotStateParser.TASK_STATE_TYPE.CLEAN_ROBOT_IS_STUCK) {
+            if (r.state === 1) {
+                this.setError(ERRORS.STUCK, "stuck");
+            } else if (this.lastError === ERRORS.STUCK) {
+                this.clearError();
+            }
+        }
+    }
+
+    /**
+     * How the last task ended. Failures become the error state; a success clears it.
+     *
+     * @public
+     * @param {Buffer} payload a raw /task/TaskResult message body
+     */
+    handleTaskResult(payload) {
+        const r = EcovacsRobotStateParser.PARSE_TASK_RESULT(payload);
+        if (!r) {
+            return;
+        }
+
+        const error = TASK_RESULT_TO_ERROR[r.result];
+        if (error) {
+            this.setError(error, "task " + r.type + " result " + r.result);
+        } else if (r.result === EcovacsRobotStateParser.TASK_RESULT.SUCCESS) {
+            this.clearError();
+        }
+    }
+
+    /**
+     * @private
+     * @param {{message: string, subsystem: string, kind: string}} error one of ERRORS
+     * @param {string} vendorErrorCode
+     */
+    setError(error, vendorErrorCode) {
+        const isNew = this.lastError !== error;
+        this.lastError = error;
+        this.lastErrorCode = vendorErrorCode;
+
+        if (isNew) {
+            Logger.warn(`Robot error: ${error.message}`);
+            if (this.valetudoEventStore) {
+                this.valetudoEventStore.raise(new ErrorStateValetudoEvent({
+                    message: error.message
+                }));
+            }
+        }
+
+        this.updateStatus();
+    }
+
+    /**
+     * @private
+     */
+    clearError() {
+        if (!this.lastError) {
+            return;
+        }
+        this.lastError = null;
+        this.lastErrorCode = "";
+
+        this.updateStatus();
+    }
+
+    /**
      * Derives the StatusStateAttribute from the latest /task/WorkState and /robot/Robot.
-     * WorkState is authoritative while a task runs; otherwise the charger decides
-     * docked vs idle.
+     * A pending error (stuck, failed task) wins; otherwise WorkState is authoritative
+     * while a task runs, and the charger decides docked vs idle.
      *
      * @private
      */
@@ -436,6 +647,23 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
 
         let value = VALUE.IDLE;
         let flag = FLAG.NONE;
+
+        if (this.lastError) {
+            this.state.upsertFirstMatchingAttribute(new stateAttrs.StatusStateAttribute({
+                value: VALUE.ERROR,
+                flag: FLAG.NONE,
+                error: new ValetudoRobotError({
+                    severity: {
+                        kind: this.lastError.kind,
+                        level: ValetudoRobotError.SEVERITY_LEVEL.ERROR
+                    },
+                    subsystem: this.lastError.subsystem,
+                    message: this.lastError.message,
+                    vendorErrorCode: this.lastErrorCode || ""
+                })
+            }));
+            return;
+        }
 
         if (w && w.state !== WS.IDLE && w.worktype !== WT.IDLE) {
             switch (w.worktype) {
@@ -637,10 +865,59 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
     }
 }
 
+const SETTINGS_REFRESH_DELAY_MS = 5000;
+const SETTINGS_REFRESH_ATTEMPTS = 6;
+
+/**
+ * Error conditions the robot reports over ROS. Kept as constants so handlers can
+ * compare identity (e.g. only the stuck report may clear the stuck error).
+ */
+const ERRORS = Object.freeze({
+    STUCK: Object.freeze({
+        message: "Robot is stuck",
+        subsystem: ValetudoRobotError.SUBSYSTEM.NAVIGATION,
+        kind: ValetudoRobotError.SEVERITY_KIND.TRANSIENT
+    }),
+    ALERT_STOP: Object.freeze({
+        message: "Task stopped by an alert",
+        subsystem: ValetudoRobotError.SUBSYSTEM.CORE,
+        kind: ValetudoRobotError.SEVERITY_KIND.TRANSIENT
+    }),
+    TASK_FAILED: Object.freeze({
+        message: "Task failed",
+        subsystem: ValetudoRobotError.SUBSYSTEM.CORE,
+        kind: ValetudoRobotError.SEVERITY_KIND.TRANSIENT
+    }),
+    DOCK_UNREACHABLE: Object.freeze({
+        message: "Could not reach the charging dock",
+        subsystem: ValetudoRobotError.SUBSYSTEM.DOCK,
+        kind: ValetudoRobotError.SEVERITY_KIND.TRANSIENT
+    }),
+    DOCK_NOT_FOUND: Object.freeze({
+        message: "Could not find the charging dock",
+        subsystem: ValetudoRobotError.SUBSYSTEM.DOCK,
+        kind: ValetudoRobotError.SEVERITY_KIND.TRANSIENT
+    }),
+    AREA_NOT_FOUND: Object.freeze({
+        message: "Could not find the requested area",
+        subsystem: ValetudoRobotError.SUBSYSTEM.NAVIGATION,
+        kind: ValetudoRobotError.SEVERITY_KIND.TRANSIENT
+    })
+});
+
+const TASK_RESULT_TO_ERROR = Object.freeze({
+    [EcovacsRobotStateParser.TASK_RESULT.FAILED]: ERRORS.TASK_FAILED,
+    [EcovacsRobotStateParser.TASK_RESULT.RETURN_FAILED_FIND_CHARGE]: ERRORS.DOCK_UNREACHABLE,
+    [EcovacsRobotStateParser.TASK_RESULT.RETURN_FAILED_CANNOT_FIND_CHARGE]: ERRORS.DOCK_NOT_FOUND,
+    [EcovacsRobotStateParser.TASK_RESULT.FAILED_FIND_AREA]: ERRORS.AREA_NOT_FOUND
+});
+
 const WORK_TYPE_TO_FLAG = Object.freeze({
     [EcovacsRobotStateParser.WORK_TYPE.AREA_CLEAN]: stateAttrs.StatusStateAttribute.FLAG.SEGMENT,
     [EcovacsRobotStateParser.WORK_TYPE.CUSTOM_CLEAN]: stateAttrs.StatusStateAttribute.FLAG.ZONE,
     [EcovacsRobotStateParser.WORK_TYPE.CIRCLE_CLEAN]: stateAttrs.StatusStateAttribute.FLAG.SPOT
 });
+
+EcovacsX1OmniValetudoRobot.ERRORS = ERRORS;
 
 module.exports = EcovacsX1OmniValetudoRobot;

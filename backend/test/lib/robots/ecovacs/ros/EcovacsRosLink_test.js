@@ -40,26 +40,50 @@ function fakeRobot() {
         },
         handleMapData: async (payload, poses) => {
             robot.maps.push({ payload: payload, poses: poses });
+        },
+        fanModes: [], waterLevels: [], taskStateReports: [], taskResults: [],
+        handleFanMode: b => {
+            robot.fanModes.push(b);
+        },
+        handleWaterLevel: b => {
+            robot.waterLevels.push(b);
+        },
+        handleTaskStateReport: b => {
+            robot.taskStateReports.push(b);
+        },
+        handleTaskResult: b => {
+            robot.taskResults.push(b);
         }
     };
     return robot;
 }
 
 describe("EcovacsRosLink", () => {
-    it("subscribes to the three state topics and routes messages", () => {
+    it("subscribes to the state topics and routes messages", () => {
         const graph = fakeGraph();
         const robot = fakeRobot();
         const link = new EcovacsRosLink({ robot: robot, client: graph.client, mapPollIntervalMs: 0, robotStateIntervalMs: 0 });
         link.start();
 
-        assert.deepStrictEqual(Object.keys(graph.subs).sort(), ["/map/ChargerDockInfo", "/robot/Robot", "/task/WorkState"]);
+        assert.deepStrictEqual(Object.keys(graph.subs).sort(), [
+            "/map/ChargerDockInfo", "/robot/Robot", "/setting/FanMode", "/setting/WaterLevel",
+            "/task/TaskResult", "/task/TaskStateReport", "/task/WorkState"
+        ]);
         graph.subs["/robot/Robot"].handlers.onMessage(Buffer.from("r"));
         graph.subs["/task/WorkState"].handlers.onMessage(Buffer.from("w"));
         graph.subs["/map/ChargerDockInfo"].handlers.onMessage(Buffer.from("d"));
+        graph.subs["/setting/FanMode"].handlers.onMessage(Buffer.from("f"));
+        graph.subs["/setting/WaterLevel"].handlers.onMessage(Buffer.from("l"));
+        graph.subs["/task/TaskStateReport"].handlers.onMessage(Buffer.from("s"));
+        graph.subs["/task/TaskResult"].handlers.onMessage(Buffer.from("t"));
 
         assert.strictEqual(robot.robotStates.length, 1);
         assert.strictEqual(robot.workStates.length, 1);
         assert.strictEqual(robot.dockInfos.length, 1);
+        assert.strictEqual(robot.fanModes.length, 1);
+        assert.strictEqual(robot.waterLevels.length, 1);
+        assert.strictEqual(robot.taskStateReports.length, 1);
+        assert.strictEqual(robot.taskResults.length, 1);
 
         link.stop();
         assert.ok(Object.values(graph.subs).every(s => {
