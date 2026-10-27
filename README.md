@@ -54,9 +54,10 @@ itsjfx. Provenance, licensing, and the full list of changed files are in
 This fork does not install itself. It requires an X1 that has been rooted and has this backend
 flashed in place of the stock one. That involves UART access, a device-specific root step, and
 an in-place rootfs update. The build constraints (the robot's Node 18 / kernel 4.14 runtime),
-the image build, and the on-device deployment are documented in the companion research repo's
-`deploy/RUNBOOK.md`. Treat rooting and reflashing as advanced and reversible only via UART plus
-a backup. Although it's really simple. 
+the image build, and the on-device deployment are documented in the [companion research repo](https://github.com/GrahamKowalski/ecovacs-x1-research)'s
+`deploy/RUNBOOK.md`. Treat rooting and reflashing as advanced: the individual steps are well
+documented and not hard to follow, but a mistake is recoverable only via UART plus a backup, so
+have both ready before you start.
 
 Once running, the backend serves the Valetudo web UI and REST API on port 80 over the LAN, and
 connects to an MQTT broker for Home Assistant autodiscovery.
