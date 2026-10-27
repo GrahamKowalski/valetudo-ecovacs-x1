@@ -52,3 +52,6 @@ ecocloud-*.jsonl
 *.secrets.*
 .env
 .env.*
+
+# pkg fetched Node base binaries (large, re-downloaded on build)
+build_dependencies/pkg/*/fetched-*

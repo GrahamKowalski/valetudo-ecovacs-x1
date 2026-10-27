@@ -115,6 +115,27 @@ secrets. Keep them in the config file only (`/local/` is gitignored for developm
 The embedded TLS paths are a convention of this fork, not something the firmware provides.
 Which hostname(s) the robot expects the certificate to cover hasn't been established yet.
 
+## Deploying to the robot
+
+The robot runs a self-built Node 18 aarch64 binary (the kernel-4.14 build constraints and the
+image flash are documented in the research repo's `deploy/RUNBOOK.md`). The boot hook
+(`/etc/rc.local`) prefers `/data/valetudo` over the baked `/usr/local/bin/valetudo`, so a
+backend update is a network copy plus a reboot, with no reflash.
+
+**The pushed binary must be executable, or the update silently does nothing.** The usual
+transfer (`nc -l -p PORT > /data/valetudo.new` on the robot, fed from the PC) writes the file
+as mode 644 with no execute bit, and `mv` keeps that mode. The boot hook only runs the file
+when it is executable (`[ -x /data/valetudo ] && BIN=/data/valetudo`); otherwise it is skipped
+and rc.local falls back to the baked binary, so the new build never runs and Home Assistant
+keeps showing the old behaviour (or `unavailable` across the reboot). Always `chmod +x` the
+file and confirm `[ -x /data/valetudo ]` before rebooting. Seen on 2026-10-27: an OTA whose
+transfer and md5 were both correct still ran the baked copy because the file was mode 644.
+
+`/data` is small (~149 MiB) and will not hold a second full binary alongside a backup, so a
+`cp` backup of the running binary fails with "No space left on device". Swap with `mv` (a
+rename needs no free space), and rely on the baked `/usr/local/bin/valetudo` as the rollback:
+`rm -f /data/valetudo` then `reboot` boots the known-good flashed copy.
+
 ## Development
 
 ```sh
