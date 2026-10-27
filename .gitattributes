@@ -1,0 +1,26 @@
+# Normalize line endings: store LF in the repo and check out LF everywhere,
+# regardless of each contributor's core.autocrlf setting. Matches the project's
+# LF-only lint rule (node/shebang, eslint).
+* text=auto eol=lf
+
+# Text formats that should always be LF
+*.js    text eol=lf
+*.ts    text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.sh    text eol=lf
+*.svg   text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+
+# Binary assets (never touch line endings)
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
