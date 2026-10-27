@@ -77,14 +77,18 @@ tests):
 
 - `/task/WorkManage` (service): start, stop, pause, resume, home (return), area clean by
   segment id (CleanWorkData.ids), go to an (x,y) point (ExtraWorkData.poses @ byte 34).
-- `/setting/SettingManage` (service): read-modify-write of fan level (byte 22) and water
-  level (byte 20), preserving other settings.
+- `/setting/SettingManage` (service): read-modify-write of fan level (byte 22), water level
+  (byte 20), mop mode (byte 19), and carpet on/off (CustomSetting type byte 2 = 8, value byte 3),
+  preserving other settings. Offsets verified on device.
+- `/setting/AromatherapyLevel` (publish): scent level (1-byte uint8).
 - `/audio/AudioPlay` (publish): locate / "I am here" (audio id 31).
 
 Capabilities in `capabilities/`: `EcovacsBasicControlCapability`, `EcovacsLocateCapability`,
 `EcovacsGoToLocationCapability` (cm->mm inverse of the map transform),
 `EcovacsMapSegmentationCapability`, `EcovacsFanSpeedControlCapability` (low/medium/high/max),
-`EcovacsWaterUsageControlCapability` (low/medium/high/max). They call the robot's
+`EcovacsWaterUsageControlCapability` (low/medium/high/max), `EcovacsCarpetModeControlCapability`
+(on/off toggle). Mop mode and scent have no standard Valetudo capability; they are exposed as
+tested command-factory methods (`setMopMode`, `setScent`) for future use. They call the robot's
 `callRosService` / `publishRosMessage` / `applySetting`, which go through `EcovacsRosLink` and
 the TCPROS client (`EcovacsTcpRosClient` gained a `publish()` that briefly registers as a real
 ROS publisher). All inactive until the ROS link is up (`ecovacsRosMasterUri`), i.e. on the robot.

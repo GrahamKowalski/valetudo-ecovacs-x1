@@ -102,6 +102,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         this.registerCapability(new capabilities.EcovacsLocateCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsGoToLocationCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsMapSegmentationCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsCarpetModeControlCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsFanSpeedControlCapability({
             robot: this,
             presets: [
@@ -576,6 +577,20 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
     async applySetting(settingType, writes) {
         const current = await this.callRosService(this.commandFactory.getSetting(settingType));
         await this.callRosService(this.commandFactory.buildSettingSet(settingType, current, writes));
+    }
+
+    /**
+     * GETs one setting and returns a single byte of its SettingData (e.g. the carpet
+     * on/off flag), for capabilities that need to read current state.
+     *
+     * @param {number} settingType
+     * @param {number} offset
+     * @returns {Promise<number|null>}
+     */
+    async readSetting(settingType, offset) {
+        const body = await this.callRosService(this.commandFactory.getSetting(settingType));
+
+        return EcovacsCommandFactory.READ_SETTING_BYTE(body, offset);
     }
 
     /**

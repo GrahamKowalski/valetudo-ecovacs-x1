@@ -148,6 +148,62 @@ class EcovacsCommandFactory {
         ]);
     }
 
+    /**
+     * @param {number} type MopMode.type 0 effective, 1 performance
+     * @param {Buffer|null} [current] bytes from a prior getSetting(MOP_MODE)
+     */
+    setMopMode(type, current = null) {
+        return this.buildSettingSet(SETTING_TYPE.MOP_MODE, current, [
+            { offset: SETTING_OFFSET.MOP_MODE, value: type }
+        ]);
+    }
+
+    /**
+     * Carpet mode is a CustomSetting: its type byte must equal CARPET_MODE and the value
+     * byte carries on/off.
+     *
+     * @param {boolean} enabled
+     * @param {Buffer|null} [current] bytes from a prior getSetting(CARPET_MODE)
+     */
+    setCarpetMode(enabled, current = null) {
+        return this.buildSettingSet(SETTING_TYPE.CARPET_MODE, current, [
+            { offset: SETTING_OFFSET.CARPET_CUSTOM_TYPE, value: SETTING_TYPE.CARPET_MODE },
+            { offset: SETTING_OFFSET.CARPET_VALUE, value: enabled ? 1 : 0 }
+        ]);
+    }
+
+    /**
+     * Reads a single setting byte from the body a getSetting() call returned (response
+     * layout: response@0, settingType@1, SettingData@2, same field offsets as the request).
+     *
+     * @param {Buffer} responseBody
+     * @param {number} offset
+     * @returns {number|null}
+     */
+    static READ_SETTING_BYTE(responseBody, offset) {
+        if (!Buffer.isBuffer(responseBody) || offset >= responseBody.length) {
+            return null;
+        }
+
+        return responseBody[offset];
+    }
+
+    // ---- /setting/AromatherapyLevel (publish) ---------------------------------------
+
+    /**
+     * Scent intensity is set by publishing to its topic (the robot subscribes).
+     *
+     * @param {number} level 0 off, 1 on, 2 low, 3 mid, 4 high, 5 ultra
+     * @returns {{topic: string, type: string, payload: Buffer}}
+     */
+    setScent(level) {
+        return {
+            topic: AROMATHERAPY_TOPIC,
+            type: "setting/AromatherapyLevel",
+            payload: Buffer.from([level])
+        };
+    }
+
     // ---- /audio/AudioPlay (publish) -------------------------------------------------
 
     /**
@@ -207,10 +263,15 @@ const SETTING_TYPE = Object.freeze({
 const SETTING_OFFSET = Object.freeze({
     MANAGE_TYPE: 0,
     SETTING_TYPE: 1,
+    CARPET_CUSTOM_TYPE: 2, // CustomSetting.type, must equal SETTING_TYPE.CARPET_MODE
+    CARPET_VALUE: 3,       // CustomSetting.settingVal, 0 off / 1 on
+    MOP_MODE: 19,          // MopMode.type, 0 effective / 1 performance
     WATER_LEVEL: 20,
     FAN_MODE: 22,
     FAN_IS_SILENT: 23
 });
+
+const AROMATHERAPY_TOPIC = "/setting/AromatherapyLevel";
 
 /** audio/AudioPlay index (subset) */
 const AUDIO = Object.freeze({

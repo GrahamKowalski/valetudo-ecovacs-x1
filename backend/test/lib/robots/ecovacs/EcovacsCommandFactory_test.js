@@ -101,6 +101,41 @@ describe("EcovacsCommandFactory", () => {
         });
     });
 
+    describe("mop / carpet / scent (verified offsets)", () => {
+        it("setMopMode writes MopMode.type at byte 19", () => {
+            const c = factory.setMopMode(1);
+
+            assert.strictEqual(c.request[0], 1); // SET
+            assert.strictEqual(c.request[1], 5); // MOP_MODE
+            assert.strictEqual(c.request[19], 1);
+        });
+
+        it("setCarpetMode writes the CustomSetting type at byte 2 and on/off at byte 3", () => {
+            const on = factory.setCarpetMode(true);
+            assert.strictEqual(on.request[1], 8); // CARPET_MODE settingType
+            assert.strictEqual(on.request[2], 8); // CustomSetting.type must equal CARPET_MODE
+            assert.strictEqual(on.request[3], 1);
+
+            assert.strictEqual(factory.setCarpetMode(false).request[3], 0);
+        });
+
+        it("setScent publishes a 1-byte level to the aromatherapy topic", () => {
+            const c = factory.setScent(4);
+
+            assert.strictEqual(c.topic, "/setting/AromatherapyLevel");
+            assert.strictEqual(c.payload.length, 1);
+            assert.strictEqual(c.payload[0], 4);
+        });
+
+        it("READ_SETTING_BYTE reads a byte from a GET response body", () => {
+            const body = Buffer.alloc(54);
+            body[3] = 1;
+            assert.strictEqual(EcovacsCommandFactory.READ_SETTING_BYTE(body, 3), 1);
+            assert.strictEqual(EcovacsCommandFactory.READ_SETTING_BYTE(body, 99), null);
+            assert.strictEqual(EcovacsCommandFactory.READ_SETTING_BYTE("x", 0), null);
+        });
+    });
+
     describe("audio / locate", () => {
         it("locate publishes audio/AudioPlay with audiomode 0, value 31 (8 bytes)", () => {
             const c = factory.locate();

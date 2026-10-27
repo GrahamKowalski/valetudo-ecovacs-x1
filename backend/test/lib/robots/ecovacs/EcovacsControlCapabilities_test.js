@@ -9,8 +9,9 @@ function makeRobot() {
     const calls = [];
     const publishes = [];
     const settings = [];
-    return {
+    const robot = {
         calls: calls, publishes: publishes, settings: settings,
+        settingBytes: {},
         commandFactory: new EcovacsCommandFactory(),
         state: { map: null },
         callRosService: async cmd => {
@@ -23,10 +24,14 @@ function makeRobot() {
         applySetting: async (settingType, writes) => {
             settings.push({ settingType: settingType, writes: writes });
         },
+        readSetting: async (settingType, offset) => {
+            return robot.settingBytes[`${settingType}:${offset}`] ?? 0;
+        },
         getMapGeometry: () => {
             return { width: 800, height: 800, resolutionMm: 50, pixelSize: 5 };
         }
     };
+    return robot;
 }
 
 describe("Ecovacs control capabilities", () => {
@@ -124,6 +129,30 @@ describe("Ecovacs control capabilities", () => {
         it("rejects an unknown preset", async () => {
             const cap = new capabilities.EcovacsFanSpeedControlCapability({ robot: robot, presets: [] });
             await assert.rejects(cap.selectPreset("nope"));
+        });
+    });
+
+    describe("CarpetModeControl", () => {
+        it("enable/disable write the CustomSetting type and on/off", async () => {
+            const cap = new capabilities.EcovacsCarpetModeControlCapability({ robot: robot });
+            await cap.enable();
+            await cap.disable();
+
+            assert.strictEqual(robot.settings.length, 2);
+            assert.strictEqual(robot.settings[0].settingType, EcovacsCommandFactory.SETTING_TYPE.CARPET_MODE);
+            assert.deepStrictEqual(robot.settings[0].writes, [
+                { offset: 2, value: 8 },
+                { offset: 3, value: 1 }
+            ]);
+            assert.deepStrictEqual(robot.settings[1].writes[1], { offset: 3, value: 0 });
+        });
+
+        it("isEnabled reflects the carpet byte", async () => {
+            const cap = new capabilities.EcovacsCarpetModeControlCapability({ robot: robot });
+            assert.strictEqual(await cap.isEnabled(), false);
+
+            robot.settingBytes[`${EcovacsCommandFactory.SETTING_TYPE.CARPET_MODE}:3`] = 1;
+            assert.strictEqual(await cap.isEnabled(), true);
         });
     });
 
