@@ -1,5 +1,5 @@
 const LZMA = require("lzma");
-const { MapLayer, PointMapEntity, ValetudoMap } = require("../../entities/map");
+const { LineMapEntity, MapLayer, PointMapEntity, PolygonMapEntity, ValetudoMap } = require("../../entities/map");
 
 /**
  * Parses an Ecovacs X1 map/CompressMap payload (as returned by the ROS services
@@ -26,9 +26,10 @@ class EcovacsMapParser {
      * @param {object} [poses] optional world poses to add as map entities
      * @param {{x: number, y: number, theta: number}} [poses.robot] robot pose (mm, rad)
      * @param {{x: number, y: number, theta: number}} [poses.charger] charger pose (mm, rad)
+     * @param {Array<{type: number, dots: Array<{x: number, y: number}>}>} [walls] virtual walls (world mm)
      * @returns {Promise<import("../../entities/map/ValetudoMap")|null>}
      */
-    static async PARSE(payload, poses) {
+    static async PARSE(payload, poses, walls) {
         if (!Buffer.isBuffer(payload) || payload.length < MIN_HEADER) {
             return null;
         }
@@ -68,7 +69,45 @@ class EcovacsMapParser {
             EcovacsMapParser.BLIT(grid, mapWidth, mapHeight, tile, submapWidth, submapHeight, col * submapWidth, row * submapHeight);
         }
 
-        return EcovacsMapParser.BUILD_MAP(grid, mapWidth, mapHeight, resolutionMm, poses);
+        return EcovacsMapParser.BUILD_MAP(grid, mapWidth, mapHeight, resolutionMm, poses, walls);
+    }
+
+    /**
+     * Decodes a /map/ManipulateVirtualWall response body into virtual walls. Layout:
+     * uint8 result, uint32 mapid, VirtualWall[] (uint32 count, then per wall: uint32 vwid,
+     * uint8 type, Dot[] = uint32 count + float32 x,y pairs). Dots are world-frame mm.
+     *
+     * @param {Buffer} buf
+     * @returns {Array<{vwid: number, type: number, dots: Array<{x: number, y: number}>}>}
+     */
+    static PARSE_VIRTUAL_WALLS(buf) {
+        if (!Buffer.isBuffer(buf) || buf.length < 9) {
+            return [];
+        }
+
+        try {
+            let off = 1; // skip uint8 result
+            off += 4;    // skip uint32 mapid
+            const count = buf.readUInt32LE(off); off += 4;
+            const walls = [];
+
+            for (let i = 0; i < count; i++) {
+                const vwid = buf.readUInt32LE(off); off += 4;
+                const type = buf.readUInt8(off); off += 1;
+                const dotCount = buf.readUInt32LE(off); off += 4;
+                const dots = [];
+                for (let j = 0; j < dotCount; j++) {
+                    const x = buf.readFloatLE(off); off += 4;
+                    const y = buf.readFloatLE(off); off += 4;
+                    dots.push({ x: x, y: y });
+                }
+                walls.push({ vwid: vwid, type: type, dots: dots });
+            }
+
+            return walls;
+        } catch {
+            return [];
+        }
     }
 
     /**
@@ -154,9 +193,10 @@ class EcovacsMapParser {
      * @param {number} height
      * @param {number} resolutionMm
      * @param {object} [poses]
+     * @param {Array<{type: number, dots: Array<{x: number, y: number}>}>} [walls]
      * @returns {import("../../entities/map/ValetudoMap")|null}
      */
-    static BUILD_MAP(grid, width, height, resolutionMm, poses) {
+    static BUILD_MAP(grid, width, height, resolutionMm, poses, walls) {
         const floor = [];
         const wall = [];
         /** @type {Object<number, Array<number>>} */
@@ -214,6 +254,25 @@ class EcovacsMapParser {
         }
         if (poses?.robot) {
             entities.push(EcovacsMapParser.POSE_TO_ENTITY(PointMapEntity.TYPE.ROBOT_POSITION, poses.robot, width, height, resolutionMm, pixelSize));
+        }
+
+        // Virtual walls and no-go zones (from /map/ManipulateVirtualWall). Each is a list of
+        // world-mm dots; two dots are a line wall, more are a closed no-go polygon.
+        for (const wall of (Array.isArray(walls) ? walls : [])) {
+            if (!wall || !Array.isArray(wall.dots) || wall.dots.length < 2) {
+                continue;
+            }
+            const points = [];
+            for (const dot of wall.dots) {
+                const px = width / 2 + dot.x / resolutionMm;
+                const py = height / 2 + dot.y / resolutionMm;
+                points.push(Math.round(px * pixelSize), Math.round(py * pixelSize));
+            }
+            if (wall.dots.length === 2) {
+                entities.push(new LineMapEntity({ type: LineMapEntity.TYPE.VIRTUAL_WALL, points: points }));
+            } else {
+                entities.push(new PolygonMapEntity({ type: PolygonMapEntity.TYPE.NO_GO_AREA, points: points }));
+            }
         }
 
         return new ValetudoMap({

@@ -93,6 +93,45 @@ class EcovacsCommandFactory {
         });
     }
 
+    // ---- /map/ManipulateVirtualWall (service) ---------------------------------------
+
+    /**
+     * Read every virtual wall / no-go zone stored on a map.
+     *
+     * @param {number} mapId vendor map id (EcovacsX1OmniValetudoRobot.currentVendorMapId)
+     * @returns {{service: string, request: Buffer, md5sum: string}}
+     */
+    getVirtualWalls(mapId) {
+        return { service: VIRTUAL_WALL_SERVICE, request: BUILD_VWALL_REQUEST(VWALL_OP.GET, mapId, []), md5sum: "*" };
+    }
+
+    /**
+     * Remove every virtual wall / no-go zone on a map.
+     *
+     * @param {number} mapId
+     * @returns {{service: string, request: Buffer, md5sum: string}}
+     */
+    clearVirtualWalls(mapId) {
+        return { service: VIRTUAL_WALL_SERVICE, request: BUILD_VWALL_REQUEST(VWALL_OP.CLEAR, mapId, []), md5sum: "*" };
+    }
+
+    /**
+     * Add one virtual wall / no-go polygon. Dots are world-frame millimetres (the same
+     * frame goTo uses). Two dots make a line wall, four a rectangular no-go zone.
+     *
+     * @param {number} mapId
+     * @param {number} wallType EcovacsCommandFactory.VWALL_TYPE
+     * @param {Array<{x: number, y: number}>} dots
+     * @returns {{service: string, request: Buffer, md5sum: string}}
+     */
+    addVirtualWall(mapId, wallType, dots) {
+        return {
+            service: VIRTUAL_WALL_SERVICE,
+            request: BUILD_VWALL_REQUEST(VWALL_OP.ADD, mapId, [{ vwid: 0, type: wallType, dots: dots }]),
+            md5sum: "*"
+        };
+    }
+
     // ---- /setting/SettingManage (service) -------------------------------------------
 
     /**
@@ -271,6 +310,59 @@ class EcovacsCommandFactory {
 
 const WORK_MANAGE_SERVICE = "/task/WorkManage";
 const SETTING_MANAGE_SERVICE = "/setting/SettingManage";
+const VIRTUAL_WALL_SERVICE = "/map/ManipulateVirtualWall";
+
+/** map/ManipulateVirtualWall request type */
+const VWALL_OP = Object.freeze({
+    ADD: 0,
+    DEL: 1,
+    CLEAR: 2,
+    MOD: 3,
+    GET: 4,
+    GET_BY_ID: 5
+});
+
+/** map/VirtualWall type */
+const VWALL_TYPE = Object.freeze({
+    NORMAL: 0,
+    CARPET: 1,
+    RECOMMEND: 2
+});
+
+/**
+ * Build a ManipulateVirtualWall request: uint8 type, uint32 mapid, uint32 vwid,
+ * VirtualWall[] (uint32 count, then per wall: uint32 vwid, uint8 type, Dot[] = uint32
+ * count + float32 x,y pairs). Verified on device.
+ *
+ * @param {number} op VWALL_OP
+ * @param {number} mapId
+ * @param {Array<{vwid: number, type: number, dots: Array<{x: number, y: number}>}>} walls
+ * @returns {Buffer}
+ */
+function BUILD_VWALL_REQUEST(op, mapId, walls) {
+    const head = Buffer.alloc(13);
+    head[0] = op;
+    head.writeUInt32LE(mapId >>> 0, 1);
+    head.writeUInt32LE(0, 5); // top-level vwid, unused for ADD/GET/CLEAR
+    head.writeUInt32LE(walls.length, 9);
+
+    const chunks = [head];
+    for (const wall of walls) {
+        const wallHead = Buffer.alloc(9);
+        wallHead.writeUInt32LE(wall.vwid >>> 0, 0);
+        wallHead[4] = wall.type;
+        wallHead.writeUInt32LE(wall.dots.length, 5);
+        chunks.push(wallHead);
+        for (const dot of wall.dots) {
+            const dotBuf = Buffer.alloc(8);
+            dotBuf.writeFloatLE(dot.x, 0);
+            dotBuf.writeFloatLE(dot.y, 4);
+            chunks.push(dotBuf);
+        }
+    }
+
+    return Buffer.concat(chunks);
+}
 const AUDIO_PLAY_TOPIC = "/audio/AudioPlay";
 const SETTING_REQUEST_LENGTH = 54;
 const AUDIO_PLAY_MODE = 0; // AUDIO_PLAY_PLAY_AUDIO
@@ -347,6 +439,7 @@ EcovacsCommandFactory.SETTING_MANAGE = SETTING_MANAGE;
 EcovacsCommandFactory.SETTING_TYPE = SETTING_TYPE;
 EcovacsCommandFactory.SETTING_OFFSET = SETTING_OFFSET;
 EcovacsCommandFactory.AUDIO = AUDIO;
+EcovacsCommandFactory.VWALL_TYPE = VWALL_TYPE;
 
 /**
  * Reconstructed live /task/WorkManage request layout (see class comment). Encodes

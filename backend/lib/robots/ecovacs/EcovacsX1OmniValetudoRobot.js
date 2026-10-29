@@ -40,6 +40,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
 
         this.lastLifespanReport = null;
         this.keyLockEnabled = false;
+        this.currentVendorMapId = null;
 
         this.robotConfig = this.config.get("robot");
         this.implConfig = (this.robotConfig && this.robotConfig.implementationSpecificConfig) ?? {};
@@ -120,6 +121,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         this.registerCapability(new capabilities.EcovacsLocateCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsGoToLocationCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsMapSegmentationCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsCombinedVirtualRestrictionsCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsCarpetModeControlCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsFanSpeedControlCapability({
             robot: this,
@@ -347,10 +349,40 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
      * @param {object} [poses] optional robot/charger world poses (from /robot/Robot and /map/ChargerDockInfo)
      */
     async handleMapData(payload, poses) {
-        const map = await EcovacsMapParser.PARSE(payload, poses);
+        if (Buffer.isBuffer(payload) && payload.length >= 5) {
+            this.currentVendorMapId = payload.readUInt32LE(1); // result@0, mapid@1
+        }
+
+        // Best-effort fetch of virtual walls / no-go zones so they render on the map and
+        // can be read back by EcovacsCombinedVirtualRestrictionsCapability. A failure here
+        // must not drop the map itself.
+        let walls = [];
+        if (this.rosLink && this.currentVendorMapId) {
+            try {
+                const body = await this.callRosService(this.commandFactory.getVirtualWalls(this.currentVendorMapId));
+                walls = EcovacsMapParser.PARSE_VIRTUAL_WALLS(body);
+            } catch (e) {
+                Logger.debug(`ROS virtual wall fetch failed: ${e.message}`);
+            }
+        }
+
+        const map = await EcovacsMapParser.PARSE(payload, poses, walls);
         if (map) {
             this.state.map = map;
             this.emitMapUpdated();
+        }
+    }
+
+    /**
+     * Re-polls the map (e.g. right after changing virtual restrictions) so the UI reflects
+     * the change without waiting for the periodic poll. No-op without the ROS link.
+     *
+     * @public
+     * @returns {Promise<void>}
+     */
+    async refreshMap() {
+        if (this.rosLink) {
+            await this.rosLink.pollMap();
         }
     }
 

@@ -159,4 +159,43 @@ describe("EcovacsCommandFactory", () => {
             assert.strictEqual(hex(c.payload), "000000001f000000");
         });
     });
+
+    describe("ManipulateVirtualWall commands (byte-exact, verified on device)", () => {
+        it("getVirtualWalls = type 4, mapid, zero vwid and wall count (13 bytes)", () => {
+            const c = factory.getVirtualWalls(0x414a57ed);
+
+            assert.strictEqual(c.service, "/map/ManipulateVirtualWall");
+            assert.strictEqual(c.md5sum, "*");
+            assert.strictEqual(c.request.length, 13);
+            assert.strictEqual(c.request[0], 4);
+            assert.strictEqual(c.request.readUInt32LE(1), 0x414a57ed);
+            assert.strictEqual(c.request.readUInt32LE(9), 0); // wall count
+        });
+
+        it("clearVirtualWalls = type 2", () => {
+            const c = factory.clearVirtualWalls(0x414a57ed);
+
+            assert.strictEqual(c.request[0], 2);
+            assert.strictEqual(c.request.length, 13);
+        });
+
+        it("addVirtualWall encodes one wall with its dots as float32 mm", () => {
+            const c = factory.addVirtualWall(0x414a57ed, EcovacsCommandFactory.VWALL_TYPE.NORMAL, [
+                { x: 500, y: 500 },
+                { x: 500, y: 1500 }
+            ]);
+
+            assert.strictEqual(c.request[0], 0); // ADD
+            assert.strictEqual(c.request.readUInt32LE(9), 1); // one wall
+            // wall header at offset 13: vwid(4), type(1), dotCount(4)
+            assert.strictEqual(c.request.readUInt32LE(13), 0); // vwid
+            assert.strictEqual(c.request[17], 0); // type NORMAL
+            assert.strictEqual(c.request.readUInt32LE(18), 2); // two dots
+            assert.strictEqual(c.request.readFloatLE(22), 500);
+            assert.strictEqual(c.request.readFloatLE(26), 500);
+            assert.strictEqual(c.request.readFloatLE(30), 500);
+            assert.strictEqual(c.request.readFloatLE(34), 1500);
+            assert.strictEqual(c.request.length, 38);
+        });
+    });
 });

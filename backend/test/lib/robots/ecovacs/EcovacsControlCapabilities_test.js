@@ -47,6 +47,11 @@ function makeRobot() {
         },
         getMapGeometry: () => {
             return { width: 800, height: 800, resolutionMm: 50, pixelSize: 5 };
+        },
+        currentVendorMapId: 0x414a57ed,
+        mapRefreshes: 0,
+        refreshMap: async () => {
+            robot.mapRefreshes++;
         }
     };
     return robot;
@@ -170,6 +175,49 @@ describe("Ecovacs control capabilities", () => {
             assert.strictEqual(writes[O.BLOCK_START_MIN], 15);
             assert.strictEqual(writes[O.BLOCK_END_HOUR], 7);
             assert.strictEqual(writes[O.BLOCK_END_MIN], 45);
+        });
+    });
+
+    describe("CombinedVirtualRestrictions", () => {
+        it("clears then re-adds walls and zones as ManipulateVirtualWall calls in mm", async () => {
+            const cap = new capabilities.EcovacsCombinedVirtualRestrictionsCapability({ robot: robot });
+
+            await cap.setVirtualRestrictions({
+                virtualWalls: [
+                    { points: { pA: { x: 2000, y: 2000 }, pB: { x: 2010, y: 2000 } } }
+                ],
+                restrictedZones: [
+                    {
+                        points: {
+                            pA: { x: 2000, y: 2000 }, pB: { x: 2050, y: 2000 },
+                            pC: { x: 2050, y: 2050 }, pD: { x: 2000, y: 2050 }
+                        }
+                    }
+                ]
+            });
+
+            assert.strictEqual(robot.calls.length, 3);
+            assert.ok(robot.calls.every(c => c.service === "/map/ManipulateVirtualWall"));
+            assert.strictEqual(robot.calls[0].request[0], 2); // CLEAR
+
+            const wall = robot.calls[1].request;
+            assert.strictEqual(wall[0], 0); // ADD
+            assert.strictEqual(wall.readUInt32LE(18), 2); // two dots
+            assert.strictEqual(wall.readFloatLE(22), 0); // pA -> 0 mm (map centre)
+            assert.strictEqual(wall.readFloatLE(30), 100); // pB -> 100 mm
+
+            const zone = robot.calls[2].request;
+            assert.strictEqual(zone[0], 0); // ADD
+            assert.strictEqual(zone.readUInt32LE(18), 4); // four dots
+
+            assert.strictEqual(robot.mapRefreshes, 1);
+        });
+
+        it("throws before the first map poll has set a map id", async () => {
+            robot.currentVendorMapId = null;
+            const cap = new capabilities.EcovacsCombinedVirtualRestrictionsCapability({ robot: robot });
+
+            await assert.rejects(cap.setVirtualRestrictions({ virtualWalls: [], restrictedZones: [] }));
         });
     });
 
