@@ -3,6 +3,7 @@
 // Imported unmodified from ValetudoEV commit d7a48bca; later changes are recorded in git history.
 
 module.exports = {
+    EcovacsAutoEmptyDockManualTriggerCapability: require("./EcovacsAutoEmptyDockManualTriggerCapability"),
     EcovacsBasicControlCapability: require("./EcovacsBasicControlCapability"),
 
     EcovacsCarpetModeControlCapability: require("./EcovacsCarpetModeControlCapability"),

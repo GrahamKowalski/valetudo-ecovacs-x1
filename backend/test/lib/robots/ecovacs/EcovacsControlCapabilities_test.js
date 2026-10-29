@@ -66,6 +66,18 @@ describe("Ecovacs control capabilities", () => {
         });
     });
 
+    describe("AutoEmptyDockManualTrigger", () => {
+        it("triggers a workType 13 (collect dirt) WorkManage request", async () => {
+            const cap = new capabilities.EcovacsAutoEmptyDockManualTriggerCapability({ robot: robot });
+            await cap.triggerAutoEmpty();
+
+            assert.strictEqual(robot.calls.length, 1);
+            assert.strictEqual(robot.calls[0].service, "/task/WorkManage");
+            assert.strictEqual(robot.calls[0].request[0], 0); // managetype START
+            assert.strictEqual(robot.calls[0].request[1], 13); // AUTO_COLLECT_DIRT
+        });
+    });
+
     describe("Locate", () => {
         it("publishes the I_AM_HERE audio", async () => {
             const cap = new capabilities.EcovacsLocateCapability({ robot: robot });

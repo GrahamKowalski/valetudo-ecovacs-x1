@@ -65,6 +65,7 @@ class EcovacsTcpRosClient {
      * @param {(header: Object<string, string>) => void} [handlers.onHeader] publisher header (type, md5sum, message_definition)
      * @param {(body: Buffer) => void} handlers.onMessage raw message body
      * @param {(err: Error) => void} [handlers.onError]
+     * @param {() => void} [handlers.onDisconnect] an established connection dropped (publisher gone), fired before reconnecting
      * @returns {{close: () => void}}
      */
     subscribe(topic, handlers) {
@@ -123,6 +124,9 @@ class EcovacsTcpRosClient {
                     sub.socket = null;
                     if (!sub.closed) {
                         Logger.debug(`TCPROS ${topic} closed, reconnecting in ${RECONNECT_DELAY_MS} ms`);
+                        if (gotHeader && handlers.onDisconnect) {
+                            handlers.onDisconnect();
+                        }
                         sub.timer = setTimeout(connect, RECONNECT_DELAY_MS);
                     }
                 });

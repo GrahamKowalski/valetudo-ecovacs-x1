@@ -23,6 +23,17 @@ describe("EcovacsCommandFactory", () => {
             assert.strictEqual(hex(c.request), "0005" + "00".repeat(51));
         });
 
+        it("collectDirt = managetype 0, workType 13, 53 bytes", () => {
+            const c = factory.collectDirt();
+
+            assert.strictEqual(c.service, "/task/WorkManage");
+            assert.strictEqual(c.md5sum, "*");
+            assert.strictEqual(c.request.length, 53);
+            assert.strictEqual(c.request[0], 0);
+            assert.strictEqual(c.request[1], 13);
+            assert.strictEqual(hex(c.request), "000d" + "00".repeat(51));
+        });
+
         it("start = managetype 0, workType 0", () => {
             const c = factory.start();
             assert.strictEqual(hex(c.request), "0000" + "00".repeat(51));

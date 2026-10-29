@@ -63,6 +63,15 @@ class EcovacsCommandFactory {
     }
 
     /**
+     * Manually triggers the dock to empty the dustbin ("collect dirt"). Argument-free,
+     * so the 53-byte zero tail is correct. Verified on device: the station runs its
+     * empty cycle while the robot stays docked.
+     */
+    collectDirt() {
+        return this.workManageCommand(WORK_CONTROL.START, WORK_TYPE.AUTO_COLLECT_DIRT);
+    }
+
+    /**
      * @param {Array<number>} segmentIds
      */
     cleanSegments(segmentIds) {
@@ -242,7 +251,8 @@ const WORK_TYPE = Object.freeze({
     AUTO_CLEAN: 0,
     AREA_CLEAN: 1,
     RETURN: 5,
-    GOTO: 6
+    GOTO: 6,
+    AUTO_COLLECT_DIRT: 13
 });
 
 /** setting/SettingManage manageType */

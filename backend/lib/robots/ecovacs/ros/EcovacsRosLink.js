@@ -59,6 +59,9 @@ class EcovacsRosLink {
                 onMessage: body => {
                     this.robot.handleWorkState(body);
                 },
+                onDisconnect: () => {
+                    this.robot.handleTaskInterruption();
+                },
                 onError: this.logError(R.WORK_STATE.topic)
             }),
             this.client.subscribe(R.CHARGER_DOCK_INFO.topic, {

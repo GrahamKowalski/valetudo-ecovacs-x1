@@ -82,7 +82,8 @@ function fakeSelf() {
     };
     for (const name of [
         "handleFanMode", "handleWaterLevel", "updateFanSpeedPreset", "updateWaterGradePreset",
-        "handleTaskStateReport", "handleTaskResult", "handleWorkState", "setError", "clearError", "updateStatus"
+        "handleTaskStateReport", "handleTaskResult", "handleWorkState", "handleTaskInterruption",
+        "setError", "clearError", "updateStatus"
     ]) {
         self[name] = R[name].bind(self);
     }
@@ -215,6 +216,43 @@ describe("EcovacsX1OmniValetudoRobot error state", () => {
         self.lastErrorCode = "";
         self.updateStatus();
         assert.strictEqual(status(self).value, "docked");
+    });
+
+    it("flags an interruption when the task topic drops mid-run (navigation stack crash)", () => {
+        const self = fakeSelf();
+        self.handleWorkState(workState(WT.AUTO_CLEAN, WS.RUNNING, WC.MANUAL));
+        assert.strictEqual(status(self).value, "cleaning");
+
+        self.handleTaskInterruption();
+        assert.strictEqual(status(self).value, "error");
+        assert.strictEqual(status(self).error.message, "Cleaning was interrupted unexpectedly");
+        assert.strictEqual(self.events.length, 1);
+
+        // the post-crash reload reports idle: the error must persist, not vanish silently
+        self.handleWorkState(workState(WT.IDLE, WS.IDLE, WC.MANUAL));
+        assert.strictEqual(status(self).value, "error");
+    });
+
+    it("does not flag an interruption when no task is running", () => {
+        const self = fakeSelf();
+        self.handleTaskInterruption();
+        assert.strictEqual(self.lastError, null);
+
+        self.handleWorkState(workState(WT.IDLE, WS.IDLE, WC.MANUAL));
+        self.handleTaskInterruption();
+        assert.strictEqual(self.lastError, null);
+    });
+
+    it("treats a brief topic drop as transient while the run keeps reporting", () => {
+        const self = fakeSelf();
+        self.handleWorkState(workState(WT.AUTO_CLEAN, WS.RUNNING, WC.MANUAL));
+        self.handleTaskInterruption();
+        assert.strictEqual(status(self).value, "error");
+
+        // WorkState resumes reporting RUNNING: the publisher was back, no real interruption
+        self.handleWorkState(workState(WT.AUTO_CLEAN, WS.RUNNING, WC.MANUAL));
+        assert.strictEqual(self.lastError, null);
+        assert.strictEqual(status(self).value, "cleaning");
     });
 
     it("does not raise an event without an event store", () => {

@@ -110,6 +110,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         // Control via the robot's own ROS graph (/task/WorkManage, /setting/SettingManage,
         // /audio/AudioPlay). Active once the ROS link is up (ecovacsRosMasterUri set).
         this.registerCapability(new capabilities.EcovacsBasicControlCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsAutoEmptyDockManualTriggerCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsLocateCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsGoToLocationCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsMapSegmentationCapability({ robot: this }));
@@ -418,6 +419,10 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
             // A task (re)started: whatever went wrong before is over.
             this.lastError = null;
             this.lastErrorCode = "";
+        } else if (w.state === WS.RUNNING && this.lastError === ERRORS.INTERRUPTED) {
+            // The task topic dropped briefly but the run is still reporting: not a real interruption.
+            this.lastError = null;
+            this.lastErrorCode = "";
         } else if (w.state === WS.IDLE && w.workcause === EcovacsRobotStateParser.WORK_CAUSE.ALERT && !this.lastError) {
             this.setError(ERRORS.ALERT_STOP, "workcause " + w.workcause);
             return;
@@ -552,6 +557,22 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
             });
         }, SETTINGS_REFRESH_DELAY_MS);
         timer.unref();
+    }
+
+    /**
+     * The task topics' publisher vanished. When this happens mid-run the robot's navigation
+     * stack has crashed and the task was aborted in place, which otherwise leaves no trace
+     * (no TaskResult, no stuck report, WorkState just falls silent then returns as idle).
+     * Surface it so Home Assistant shows an error instead of a silent idle. Cleared when the
+     * run resumes, a task result arrives, or the robot reaches the dock.
+     *
+     * @public
+     */
+    handleTaskInterruption() {
+        const WS = EcovacsRobotStateParser.WORK_STATE;
+        if (this.lastWorkState && this.lastWorkState.state === WS.RUNNING && !this.lastError) {
+            this.setError(ERRORS.INTERRUPTED, "task topic publisher lost");
+        }
     }
 
     /**
@@ -880,6 +901,11 @@ const ERRORS = Object.freeze({
     }),
     ALERT_STOP: Object.freeze({
         message: "Task stopped by an alert",
+        subsystem: ValetudoRobotError.SUBSYSTEM.CORE,
+        kind: ValetudoRobotError.SEVERITY_KIND.TRANSIENT
+    }),
+    INTERRUPTED: Object.freeze({
+        message: "Cleaning was interrupted unexpectedly",
         subsystem: ValetudoRobotError.SUBSYSTEM.CORE,
         kind: ValetudoRobotError.SEVERITY_KIND.TRANSIENT
     }),
