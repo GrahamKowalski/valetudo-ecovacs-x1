@@ -13,6 +13,7 @@ function makeRobot() {
         calls: calls, publishes: publishes, settings: settings,
         settingBytes: {},
         commandFactory: new EcovacsCommandFactory(),
+        valetudoEventStore: { raise: () => {}, setProcessed: () => {}, getProcessed: () => undefined },
         state: { map: null },
         callRosService: async cmd => {
             calls.push(cmd);
@@ -75,6 +76,32 @@ describe("Ecovacs control capabilities", () => {
             assert.strictEqual(robot.calls[0].service, "/task/WorkManage");
             assert.strictEqual(robot.calls[0].request[0], 0); // managetype START
             assert.strictEqual(robot.calls[0].request[1], 13); // AUTO_COLLECT_DIRT
+        });
+    });
+
+    describe("ConsumableMonitoring", () => {
+        it("reports brush/filter/mop remaining life as percent from the lifespan report", async () => {
+            robot.lastLifespanReport = { mainBrush: 88, sideBrush: 77, filter: 66, mop: 55 };
+            const cap = new capabilities.EcovacsConsumableMonitoringCapability({ robot: robot });
+            const consumables = await cap.getConsumables();
+
+            assert.strictEqual(consumables.length, 4);
+            const byKey = {};
+            consumables.forEach(c => {
+                byKey[c.type + "/" + c.subType] = c;
+            });
+            assert.strictEqual(byKey["brush/main"].remaining.value, 88);
+            assert.strictEqual(byKey["brush/main"].remaining.unit, "percent");
+            assert.strictEqual(byKey["brush/side_right"].remaining.value, 77);
+            assert.strictEqual(byKey["filter/main"].remaining.value, 66);
+            assert.strictEqual(byKey["mop/main"].remaining.value, 55);
+        });
+
+        it("reports nothing before any lifespan report has arrived", async () => {
+            robot.lastLifespanReport = undefined;
+            const cap = new capabilities.EcovacsConsumableMonitoringCapability({ robot: robot });
+            const consumables = await cap.getConsumables();
+            assert.strictEqual(consumables.length, 0);
         });
     });
 

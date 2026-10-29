@@ -113,6 +113,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         // /audio/AudioPlay). Active once the ROS link is up (ecovacsRosMasterUri set).
         this.registerCapability(new capabilities.EcovacsBasicControlCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsAutoEmptyDockManualTriggerCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsConsumableMonitoringCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsLocateCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsGoToLocationCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsMapSegmentationCapability({ robot: this }));
