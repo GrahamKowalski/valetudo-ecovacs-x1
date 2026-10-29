@@ -39,6 +39,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         this.buildMap();
 
         this.lastLifespanReport = null;
+        this.keyLockEnabled = false;
 
         this.robotConfig = this.config.get("robot");
         this.implConfig = (this.robotConfig && this.robotConfig.implementationSpecificConfig) ?? {};
@@ -114,6 +115,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         this.registerCapability(new capabilities.EcovacsBasicControlCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsAutoEmptyDockManualTriggerCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsConsumableMonitoringCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsKeyLockCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsLocateCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsGoToLocationCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsMapSegmentationCapability({ robot: this }));

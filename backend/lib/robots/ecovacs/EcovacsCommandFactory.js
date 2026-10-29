@@ -213,6 +213,22 @@ class EcovacsCommandFactory {
         };
     }
 
+    // ---- /omni/control (publish) ----------------------------------------------------
+
+    /**
+     * Toggles the station child lock by publishing to /omni/control (type 1).
+     *
+     * @param {boolean} enabled
+     * @returns {{topic: string, type: string, payload: Buffer}}
+     */
+    childLock(enabled) {
+        const payload = Buffer.alloc(5);
+        payload.writeUInt32LE(OMNI_CONTROL.CHILD_LOCK, 0);
+        payload[4] = enabled ? 1 : 0;
+
+        return { topic: OMNI_CONTROL_TOPIC, type: "omni/control", payload: payload };
+    }
+
     // ---- /audio/AudioPlay (publish) -------------------------------------------------
 
     /**
@@ -282,6 +298,14 @@ const SETTING_OFFSET = Object.freeze({
 });
 
 const AROMATHERAPY_TOPIC = "/setting/AromatherapyLevel";
+const OMNI_CONTROL_TOPIC = "/omni/control";
+
+/** /omni/control type field */
+const OMNI_CONTROL = Object.freeze({
+    CHILD_LOCK: 1,
+    SLEEP_MODE: 2,
+    LIGHT_ALERT: 3
+});
 
 /** audio/AudioPlay index (subset) */
 const AUDIO = Object.freeze({

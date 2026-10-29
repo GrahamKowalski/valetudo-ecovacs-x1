@@ -9,6 +9,7 @@ module.exports = {
     EcovacsConsumableMonitoringCapability: require("./EcovacsConsumableMonitoringCapability"),
     EcovacsFanSpeedControlCapability: require("./EcovacsFanSpeedControlCapability"),
     EcovacsGoToLocationCapability: require("./EcovacsGoToLocationCapability"),
+    EcovacsKeyLockCapability: require("./EcovacsKeyLockCapability"),
     EcovacsLocateCapability: require("./EcovacsLocateCapability"),
     EcovacsMapSegmentationCapability: require("./EcovacsMapSegmentationCapability"),
     EcovacsWaterUsageControlCapability: require("./EcovacsWaterUsageControlCapability"),

@@ -105,6 +105,23 @@ describe("Ecovacs control capabilities", () => {
         });
     });
 
+    describe("KeyLock", () => {
+        it("publishes /omni/control type 1 on enable/disable and tracks state", async () => {
+            const cap = new capabilities.EcovacsKeyLockCapability({ robot: robot });
+
+            await cap.enable();
+            assert.strictEqual(robot.publishes.length, 1);
+            assert.strictEqual(robot.publishes[0].topic, "/omni/control");
+            assert.strictEqual(robot.publishes[0].payload.readUInt32LE(0), 1); // CHILD_LOCK
+            assert.strictEqual(robot.publishes[0].payload[4], 1); // on
+            assert.strictEqual(await cap.isEnabled(), true);
+
+            await cap.disable();
+            assert.strictEqual(robot.publishes[1].payload[4], 0); // off
+            assert.strictEqual(await cap.isEnabled(), false);
+        });
+    });
+
     describe("Locate", () => {
         it("publishes the I_AM_HERE audio", async () => {
             const cap = new capabilities.EcovacsLocateCapability({ robot: robot });
