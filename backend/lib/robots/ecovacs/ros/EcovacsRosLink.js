@@ -84,6 +84,9 @@ class EcovacsRosLink {
             }),
             this.simpleSubscription(R.TASK_RESULT, body => {
                 this.robot.handleTaskResult(body);
+            }),
+            this.simpleSubscription(R.LIFESPAN_REPORT, body => {
+                this.robot.handleLifespanReport(body);
             })
         );
 

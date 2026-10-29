@@ -143,6 +143,29 @@ class EcovacsRobotStateParser {
             return { type: m.type, result: m.result, data: m.data };
         });
     }
+
+    /**
+     * /lifespan/lifespanreport: eight uint8 remaining-life percentages in a fixed order.
+     *
+     * @param {Buffer} buf a /lifespan/lifespanreport message body
+     * @returns {{mainBrush: number, sideBrush: number, filter: number, scent: number,
+     *            dustbag: number, silverion: number, doorbar: number, mop: number}|null}
+     */
+    static PARSE_LIFESPAN_REPORT(buf) {
+        if (!Buffer.isBuffer(buf) || buf.length < 8) {
+            return null;
+        }
+        return {
+            mainBrush: buf[0],
+            sideBrush: buf[1],
+            filter: buf[2],
+            scent: buf[3],
+            dustbag: buf[4],
+            silverion: buf[5],
+            doorbar: buf[6],
+            mop: buf[7]
+        };
+    }
 }
 
 /**

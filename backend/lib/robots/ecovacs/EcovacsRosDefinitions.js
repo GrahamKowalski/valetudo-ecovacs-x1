@@ -364,6 +364,19 @@ uint8 FAILED_FIND_AREA = 6
 uint8 result
 
 string data`
+    }),
+    LIFESPAN_REPORT: Object.freeze({
+        topic: "/lifespan/lifespanreport",
+        type: "lifespan/lifespanreport",
+        md5sum: "94d915b1ea626737b94195d388d2d76d",
+        text: `uint8 MAIN_BRUSH
+uint8 SIDE_BRUSH
+uint8 LIFE_HEPA
+uint8 XIANGXUN
+uint8 DUSTBAG
+uint8 SILVERION
+uint8 DOORBAR
+uint8 MOP`
     })
 });
 

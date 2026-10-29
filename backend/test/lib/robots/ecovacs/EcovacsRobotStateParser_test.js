@@ -173,3 +173,18 @@ describe("EcovacsRobotStateParser", () => {
         });
     });
 });
+
+describe("EcovacsRobotStateParser PARSE_LIFESPAN_REPORT", () => {
+    it("parses eight remaining-life percentages", () => {
+        const buf = Buffer.from([80, 60, 40, 10, 95, 50, 30, 70]);
+        const r = EcovacsRobotStateParser.PARSE_LIFESPAN_REPORT(buf);
+        assert.strictEqual(r.mainBrush, 80);
+        assert.strictEqual(r.sideBrush, 60);
+        assert.strictEqual(r.filter, 40);
+        assert.strictEqual(r.mop, 70);
+    });
+    it("returns null on a short buffer", () => {
+        assert.strictEqual(EcovacsRobotStateParser.PARSE_LIFESPAN_REPORT(Buffer.alloc(4)), null);
+        assert.strictEqual(EcovacsRobotStateParser.PARSE_LIFESPAN_REPORT(null), null);
+    });
+});

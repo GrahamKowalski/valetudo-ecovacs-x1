@@ -38,6 +38,8 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         super(options);
         this.buildMap();
 
+        this.lastLifespanReport = null;
+
         this.robotConfig = this.config.get("robot");
         this.implConfig = (this.robotConfig && this.robotConfig.implementationSpecificConfig) ?? {};
 
@@ -613,6 +615,20 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
             this.setError(error, "task " + r.type + " result " + r.result);
         } else if (r.result === EcovacsRobotStateParser.TASK_RESULT.SUCCESS) {
             this.clearError();
+        }
+    }
+
+    /**
+     * Stores the latest consumable remaining-life percentages from /lifespan/lifespanreport,
+     * read back by EcovacsConsumableMonitoringCapability.
+     *
+     * @public
+     * @param {Buffer} payload a raw /lifespan/lifespanreport message body
+     */
+    handleLifespanReport(payload) {
+        const r = EcovacsRobotStateParser.PARSE_LIFESPAN_REPORT(payload);
+        if (r) {
+            this.lastLifespanReport = r;
         }
     }
 

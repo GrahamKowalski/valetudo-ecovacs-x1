@@ -41,7 +41,7 @@ function fakeRobot() {
         handleMapData: async (payload, poses) => {
             robot.maps.push({ payload: payload, poses: poses });
         },
-        fanModes: [], waterLevels: [], taskStateReports: [], taskResults: [],
+        fanModes: [], waterLevels: [], taskStateReports: [], taskResults: [], lifespanReports: [],
         handleFanMode: b => {
             robot.fanModes.push(b);
         },
@@ -53,6 +53,9 @@ function fakeRobot() {
         },
         handleTaskResult: b => {
             robot.taskResults.push(b);
+        },
+        handleLifespanReport: b => {
+            robot.lifespanReports.push(b);
         }
     };
     return robot;
@@ -66,7 +69,7 @@ describe("EcovacsRosLink", () => {
         link.start();
 
         assert.deepStrictEqual(Object.keys(graph.subs).sort(), [
-            "/map/ChargerDockInfo", "/robot/Robot", "/setting/FanMode", "/setting/WaterLevel",
+            "/lifespan/lifespanreport", "/map/ChargerDockInfo", "/robot/Robot", "/setting/FanMode", "/setting/WaterLevel",
             "/task/TaskResult", "/task/TaskStateReport", "/task/WorkState"
         ]);
         graph.subs["/robot/Robot"].handlers.onMessage(Buffer.from("r"));
@@ -76,6 +79,7 @@ describe("EcovacsRosLink", () => {
         graph.subs["/setting/WaterLevel"].handlers.onMessage(Buffer.from("l"));
         graph.subs["/task/TaskStateReport"].handlers.onMessage(Buffer.from("s"));
         graph.subs["/task/TaskResult"].handlers.onMessage(Buffer.from("t"));
+        graph.subs["/lifespan/lifespanreport"].handlers.onMessage(Buffer.from("c"));
 
         assert.strictEqual(robot.robotStates.length, 1);
         assert.strictEqual(robot.workStates.length, 1);
@@ -84,6 +88,7 @@ describe("EcovacsRosLink", () => {
         assert.strictEqual(robot.waterLevels.length, 1);
         assert.strictEqual(robot.taskStateReports.length, 1);
         assert.strictEqual(robot.taskResults.length, 1);
+        assert.strictEqual(robot.lifespanReports.length, 1);
 
         link.stop();
         assert.ok(Object.values(graph.subs).every(s => {
