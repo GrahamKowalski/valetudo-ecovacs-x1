@@ -182,6 +182,27 @@ class EcovacsCommandFactory {
     }
 
     /**
+     * Do Not Disturb (BlockTimeSetting): an on/off flag plus a start and end time. Only
+     * the hour and minute of each DateTime are written; the robot's own block-time file
+     * is driven from these fields (verified on device). Offsets cross-checked against the
+     * firmware's settingBlock.json (end hour at offset 16, end minute at 17).
+     *
+     * @param {boolean} enabled
+     * @param {{hour: number, minute: number}} start
+     * @param {{hour: number, minute: number}} end
+     * @param {Buffer|null} [current] bytes from a prior getSetting(BLOCK_TIME)
+     */
+    setDoNotDisturb(enabled, start, end, current = null) {
+        return this.buildSettingSet(SETTING_TYPE.BLOCK_TIME, current, [
+            { offset: SETTING_OFFSET.BLOCK_ON, value: enabled ? 1 : 0 },
+            { offset: SETTING_OFFSET.BLOCK_START_HOUR, value: start.hour },
+            { offset: SETTING_OFFSET.BLOCK_START_MIN, value: start.minute },
+            { offset: SETTING_OFFSET.BLOCK_END_HOUR, value: end.hour },
+            { offset: SETTING_OFFSET.BLOCK_END_MIN, value: end.minute }
+        ]);
+    }
+
+    /**
      * Reads a single setting byte from the body a getSetting() call returned (response
      * layout: response@0, settingType@1, SettingData@2, same field offsets as the request).
      *
@@ -279,10 +300,12 @@ const SETTING_MANAGE = Object.freeze({
 
 /** setting/SettingType */
 const SETTING_TYPE = Object.freeze({
+    BLOCK_TIME: 4,
     MOP_MODE: 5,
     WATER_LEVEL: 6,
     FAN_LEVEL: 7,
-    CARPET_MODE: 8
+    CARPET_MODE: 8,
+    AC_ON_OFF: 13
 });
 
 /** Verified byte offsets inside the 54-byte SettingManage request */
@@ -291,10 +314,16 @@ const SETTING_OFFSET = Object.freeze({
     SETTING_TYPE: 1,
     CARPET_CUSTOM_TYPE: 2, // CustomSetting.type, must equal SETTING_TYPE.CARPET_MODE
     CARPET_VALUE: 3,       // CustomSetting.settingVal, 0 off / 1 on
+    BLOCK_ON: 4,           // BlockTimeSetting.isOn, 0 off / 1 on
+    BLOCK_START_HOUR: 9,   // BlockTimeSetting.startTime.hour
+    BLOCK_START_MIN: 10,   // BlockTimeSetting.startTime.min
+    BLOCK_END_HOUR: 16,    // BlockTimeSetting.endTime.hour
+    BLOCK_END_MIN: 17,     // BlockTimeSetting.endTime.min
     MOP_MODE: 19,          // MopMode.type, 0 effective / 1 performance
     WATER_LEVEL: 20,
     FAN_MODE: 22,
-    FAN_IS_SILENT: 23
+    FAN_IS_SILENT: 23,
+    AC_ON_OFF: 38          // AutoCollectOnOff, 1 auto-empty on / 0 off
 });
 
 const AROMATHERAPY_TOPIC = "/setting/AromatherapyLevel";

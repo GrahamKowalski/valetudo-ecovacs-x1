@@ -116,6 +116,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         this.registerCapability(new capabilities.EcovacsAutoEmptyDockManualTriggerCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsConsumableMonitoringCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsKeyLockCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsDoNotDisturbCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsLocateCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsGoToLocationCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsMapSegmentationCapability({ robot: this }));
@@ -874,6 +875,17 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         const body = await this.callRosService(this.commandFactory.getSetting(settingType));
 
         return EcovacsCommandFactory.READ_SETTING_BYTE(body, offset);
+    }
+
+    /**
+     * GETs one setting and returns the whole SettingData body, for capabilities that read
+     * several fields at once (e.g. Do Not Disturb: enable flag plus start and end time).
+     *
+     * @param {number} settingType
+     * @returns {Promise<Buffer>}
+     */
+    async readSettingBody(settingType) {
+        return this.callRosService(this.commandFactory.getSetting(settingType));
     }
 
     /**

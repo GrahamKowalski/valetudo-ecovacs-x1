@@ -28,6 +28,16 @@ function makeRobot() {
         readSetting: async (settingType, offset) => {
             return robot.settingBytes[`${settingType}:${offset}`] ?? 0;
         },
+        readSettingBody: async settingType => {
+            const body = Buffer.alloc(54);
+            Object.keys(robot.settingBytes).forEach(key => {
+                const [type, offset] = key.split(":").map(Number);
+                if (type === settingType) {
+                    body[offset] = robot.settingBytes[key];
+                }
+            });
+            return body;
+        },
         presetUpdates: [],
         updateFanSpeedPreset: (mode, isSilent) => {
             robot.presetUpdates.push({ fan: { mode: mode, isSilent: isSilent } });
@@ -119,6 +129,47 @@ describe("Ecovacs control capabilities", () => {
             await cap.disable();
             assert.strictEqual(robot.publishes[1].payload[4], 0); // off
             assert.strictEqual(await cap.isEnabled(), false);
+        });
+    });
+
+    describe("DoNotDisturb", () => {
+        const T = EcovacsCommandFactory.SETTING_TYPE;
+        const O = EcovacsCommandFactory.SETTING_OFFSET;
+
+        it("reads the block-time window from SettingManage BLOCK_TIME", async () => {
+            robot.settingBytes[`${T.BLOCK_TIME}:${O.BLOCK_ON}`] = 1;
+            robot.settingBytes[`${T.BLOCK_TIME}:${O.BLOCK_START_HOUR}`] = 22;
+            robot.settingBytes[`${T.BLOCK_TIME}:${O.BLOCK_START_MIN}`] = 30;
+            robot.settingBytes[`${T.BLOCK_TIME}:${O.BLOCK_END_HOUR}`] = 8;
+            robot.settingBytes[`${T.BLOCK_TIME}:${O.BLOCK_END_MIN}`] = 0;
+
+            const cap = new capabilities.EcovacsDoNotDisturbCapability({ robot: robot });
+            const dnd = await cap.getDndConfiguration();
+
+            assert.strictEqual(dnd.enabled, true);
+            assert.deepStrictEqual(dnd.start, { hour: 22, minute: 30 });
+            assert.deepStrictEqual(dnd.end, { hour: 8, minute: 0 });
+        });
+
+        it("writes enable flag and start/end time at the verified offsets", async () => {
+            const cap = new capabilities.EcovacsDoNotDisturbCapability({ robot: robot });
+            await cap.setDndConfiguration({
+                enabled: false,
+                start: { hour: 21, minute: 15 },
+                end: { hour: 7, minute: 45 }
+            });
+
+            assert.strictEqual(robot.settings.length, 1);
+            assert.strictEqual(robot.settings[0].settingType, T.BLOCK_TIME);
+            const writes = {};
+            robot.settings[0].writes.forEach(w => {
+                writes[w.offset] = w.value;
+            });
+            assert.strictEqual(writes[O.BLOCK_ON], 0);
+            assert.strictEqual(writes[O.BLOCK_START_HOUR], 21);
+            assert.strictEqual(writes[O.BLOCK_START_MIN], 15);
+            assert.strictEqual(writes[O.BLOCK_END_HOUR], 7);
+            assert.strictEqual(writes[O.BLOCK_END_MIN], 45);
         });
     });
 
