@@ -37,15 +37,21 @@ itsjfx. Provenance, licensing, and the full list of changed files are in
 | Fan speed (low, medium, high, max) | Verified on device |
 | Water usage (low, medium, high, max) | Verified on device |
 | Carpet mode | Verified on device |
+| Auto-empty dock (manual trigger) | Verified on device |
+| Do not disturb (quiet hours) | Verified on device |
+| No-go zones and virtual walls | Verified on device |
+| Consumable monitoring (main/side brush, filter, mop life) | Implemented |
+| Child lock | Implemented (write-only, no read-back) |
 | Wi-Fi configuration and scan | Implemented (standard Valetudo) |
-| Error reporting (stuck, failed task, dock unreachable, alert stop) | Implemented and unit-tested, not yet field-proven |
+| Error reporting (stuck, failed task, dock unreachable, alert stop, silent mid-run crash) | Implemented and deployed |
 
 ### Not yet implemented
 
-- Dock station automations (mop wash, mop dry, auto-empty) are reachable over ROS but are not
-  exposed as Valetudo capabilities yet.
-- Scent intensity and voice volume exist as internal command methods, not user-facing controls.
-- Consumables and lifespan reporting are not wired up.
+- Mop wash and mop dry station cycles are reachable over ROS but are not exposed as Valetudo
+  capabilities yet (unverified without a mop attached).
+- Zone cleaning by rectangle, and auto-empty interval/frequency, are mapped but not yet built.
+- Scent intensity exists as an internal command method; voice/speaker volume needs a short
+  on-device probe before it can be exposed.
 - Scheduling is deliberately left to Home Assistant rather than built in, in line with upstream
   Valetudo's design.
 
@@ -66,8 +72,9 @@ connects to an MQTT broker for Home Assistant autodiscovery.
 
 Point the Valetudo MQTT settings at your broker and enable Home Assistant autodiscovery. The
 vacuum entity appears automatically, along with battery, attachment, fan, water, carpet-mode,
-and error entities. Scheduling is done with Home Assistant automations that call the vacuum,
-which also gives you per-room routines, conditions, and presence.
+auto-empty trigger, do-not-disturb, no-go-zone, consumable, child-lock, and error entities.
+Scheduling is done with Home Assistant automations that call the vacuum, which also gives you
+per-room routines, conditions, and presence.
 
 ## Relationship to upstream Valetudo
 
