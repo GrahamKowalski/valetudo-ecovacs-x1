@@ -295,6 +295,8 @@ describe("Ecovacs control capabilities", () => {
             assert.strictEqual(req.readFloatLE(18), 500);
             assert.strictEqual(req.readFloatLE(22), 1500);
             assert.strictEqual(req.readFloatLE(26), 1500);
+            assert.strictEqual(req.readUInt32LE(30), 1); // one area -> one cycle entry
+            assert.strictEqual(req[34], 1); // one pass (default iterations)
         });
 
         it("flattens multiple zones into dot pairs", async () => {
@@ -307,7 +309,9 @@ describe("Ecovacs control capabilities", () => {
             };
             await cap.start({ zones: [zone, zone] });
 
-            assert.strictEqual(robot.calls[0].request.readUInt32LE(10), 4); // two zones -> four dots
+            const req = robot.calls[0].request;
+            assert.strictEqual(req.readUInt32LE(10), 4); // two zones -> four dots
+            assert.strictEqual(req.readUInt32LE(46), 2); // -> two cycle entries (after 4 dots)
         });
 
         it("sends nothing when no zones are given", async () => {

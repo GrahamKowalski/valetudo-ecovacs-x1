@@ -73,16 +73,16 @@ describe("EcovacsCommandFactory", () => {
             assert.ok(Math.abs(c.request.readFloatLE(62) + 2.571) < 1e-3);
         });
 
-        it("cleanZones puts the customAreas count at byte 10 and dots from byte 14", () => {
+        it("cleanZones puts customAreas at byte 10, dots at 14, and the cycle count after", () => {
             const c = factory.cleanZones([
                 { x: 500, y: 1500 },
                 { x: -500, y: -1500 }
-            ]);
+            ], [1]);
 
             assert.strictEqual(c.service, "/task/WorkManage");
             assert.strictEqual(c.md5sum, "*");
-            // 53-byte empty request + 2 dots * 8 bytes
-            assert.strictEqual(c.request.length, 69);
+            // 53-byte empty request + 2 dots * 8 bytes + 1 cycle byte (verified on device)
+            assert.strictEqual(c.request.length, 70);
             assert.strictEqual(c.request[0], 0);
             assert.strictEqual(c.request[1], 2); // CUSTOM_CLEAN
             assert.strictEqual(c.request.readUInt32LE(10), 2); // customAreas count
@@ -90,6 +90,8 @@ describe("EcovacsCommandFactory", () => {
             assert.strictEqual(c.request.readFloatLE(18), 1500);
             assert.strictEqual(c.request.readFloatLE(22), -500);
             assert.strictEqual(c.request.readFloatLE(26), -1500);
+            assert.strictEqual(c.request.readUInt32LE(30), 1); // cycles count (one area)
+            assert.strictEqual(c.request[34], 1); // one pass
             // ids count (byte 2) stays zero
             assert.strictEqual(c.request.readUInt32LE(2), 0);
         });

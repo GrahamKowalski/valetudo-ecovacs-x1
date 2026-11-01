@@ -88,12 +88,17 @@ class EcovacsCommandFactory {
      * dots form one area, so each zone is a pair of opposite rectangle corners; the dots are
      * passed already flattened.
      *
+     * `cycles` carries one pass count per area (so its length is dots.length / 2). It is
+     * required: verified on device, a request with areas but an empty `cycles` is rejected
+     * with "unable to find designated area", while one pass each starts the clean.
+     *
      * @param {Array<{x: number, y: number}>} dots flattened pairs of opposite corners, world mm
+     * @param {Array<number>} cycles pass count per area (one uint8 each)
      * @returns {{service: string, request: Buffer, md5sum: string}}
      */
-    cleanZones(dots) {
+    cleanZones(dots, cycles) {
         return this.workManageCommand(WORK_CONTROL.START, WORK_TYPE.CUSTOM_CLEAN, {
-            cleanData: { customAreas: dots }
+            cleanData: { customAreas: dots, cycles: cycles }
         });
     }
 

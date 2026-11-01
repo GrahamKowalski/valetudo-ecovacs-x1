@@ -79,7 +79,8 @@ tests):
 
 - `/task/WorkManage` (service): start, stop, pause, resume, home (return), area clean by
   segment id (CleanWorkData.ids), zone clean of freeform rectangles (workType 2 CUSTOM_CLEAN,
-  CleanWorkData.customAreas @ byte 10, two world-mm dots per rectangle), go to an (x,y) point
+  CleanWorkData.customAreas @ byte 10, two world-mm dots per rectangle, plus one
+  CleanWorkData.cycles pass-count per area or the robot rejects the area), go to an (x,y) point
   (ExtraWorkData.poses @ byte 34), and manual auto-empty (workType 13, AUTO_COLLECT_DIRT).
 - `/setting/SettingManage` (service): read-modify-write of fan level (byte 22), water level
   (byte 20), mop mode (byte 19), carpet on/off (CustomSetting type byte 2 = 8, value byte 3),
@@ -110,10 +111,10 @@ scent have no standard Valetudo capability; they are exposed as tested command-f
 gained a `publish()` that briefly registers as a real ROS publisher). All inactive until the ROS
 link is up (`ecovacsRosMasterUri`), i.e. on the robot. Commands use md5sum "*" so the
 reconstructed layouts need no checksum match. Tested offline against byte-exact fixtures and a
-mocked robot, and exercised on the device. The zone-clean command (`cleanZones`, workType 2) is
-built on the device-verified `customAreas` byte layout (recovered by the same array-walk as the
-rest of the request) but has not yet been fired as a complete clean on the robot; verify it on
-device after the next deploy.
+mocked robot, and exercised on the device. The zone-clean command (`cleanZones`, workType 2) was
+fired end to end on the robot: it cleans the designated rectangle and returns to the dock. A custom
+area requires a matching `CleanWorkData.cycles` pass-count entry; without it the robot refuses with
+"unable to find designated area" (found on device, now sent by the capability).
 
 ## Configuration
 

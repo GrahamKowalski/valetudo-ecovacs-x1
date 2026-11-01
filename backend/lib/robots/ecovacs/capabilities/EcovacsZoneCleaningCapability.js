@@ -23,16 +23,21 @@ class EcovacsZoneCleaningCapability extends ZoneCleaningCapability {
             return EcovacsGoToLocationCapability.POINT_CM_TO_WORLD_MM(point.x, point.y, geometry);
         };
 
+        // One pass count per area. The robot rejects a custom area with no cycle entry
+        // ("unable to find designated area"), so every area gets at least one pass.
+        const passes = Math.max(1, Math.round(options.iterations || 1));
         const dots = [];
+        const cycles = [];
         for (const zone of options.zones) {
             dots.push(toMm(zone.points.pA), toMm(zone.points.pC));
+            cycles.push(passes);
         }
 
         if (dots.length === 0) {
             return;
         }
 
-        await this.robot.callRosService(this.robot.commandFactory.cleanZones(dots));
+        await this.robot.callRosService(this.robot.commandFactory.cleanZones(dots, cycles));
     }
 }
 
