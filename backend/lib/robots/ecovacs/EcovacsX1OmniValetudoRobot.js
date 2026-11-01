@@ -121,6 +121,7 @@ class EcovacsX1OmniValetudoRobot extends ValetudoRobot {
         this.registerCapability(new capabilities.EcovacsLocateCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsGoToLocationCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsMapSegmentationCapability({ robot: this }));
+        this.registerCapability(new capabilities.EcovacsZoneCleaningCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsCombinedVirtualRestrictionsCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsCarpetModeControlCapability({ robot: this }));
         this.registerCapability(new capabilities.EcovacsFanSpeedControlCapability({

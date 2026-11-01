@@ -272,6 +272,52 @@ describe("Ecovacs control capabilities", () => {
         });
     });
 
+    describe("ZoneCleaning", () => {
+        it("sends a CUSTOM_CLEAN with the zone's opposite corners in world mm", async () => {
+            const cap = new capabilities.EcovacsZoneCleaningCapability({ robot: robot });
+            await cap.start({
+                zones: [{
+                    points: {
+                        pA: { x: 2050, y: 2050 },
+                        pB: { x: 2150, y: 2050 },
+                        pC: { x: 2150, y: 2150 },
+                        pD: { x: 2050, y: 2150 }
+                    }
+                }],
+                iterations: 1
+            });
+
+            const req = robot.calls[0].request;
+            assert.strictEqual(req[1], 2); // CUSTOM_CLEAN
+            assert.strictEqual(req.readUInt32LE(10), 2); // two dots (pA, pC)
+            // (2050/5 - 400)*50 = 500 ; (2150/5 - 400)*50 = 1500
+            assert.strictEqual(req.readFloatLE(14), 500);
+            assert.strictEqual(req.readFloatLE(18), 500);
+            assert.strictEqual(req.readFloatLE(22), 1500);
+            assert.strictEqual(req.readFloatLE(26), 1500);
+        });
+
+        it("flattens multiple zones into dot pairs", async () => {
+            const cap = new capabilities.EcovacsZoneCleaningCapability({ robot: robot });
+            const zone = {
+                points: {
+                    pA: { x: 2000, y: 2000 }, pB: { x: 2100, y: 2000 },
+                    pC: { x: 2100, y: 2100 }, pD: { x: 2000, y: 2100 }
+                }
+            };
+            await cap.start({ zones: [zone, zone] });
+
+            assert.strictEqual(robot.calls[0].request.readUInt32LE(10), 4); // two zones -> four dots
+        });
+
+        it("sends nothing when no zones are given", async () => {
+            const cap = new capabilities.EcovacsZoneCleaningCapability({ robot: robot });
+            await cap.start({ zones: [] });
+
+            assert.strictEqual(robot.calls.length, 0);
+        });
+    });
+
     describe("FanSpeed", () => {
         it("applies the preset's mode and isSilent at the right offsets", async () => {
             const cap = new capabilities.EcovacsFanSpeedControlCapability({

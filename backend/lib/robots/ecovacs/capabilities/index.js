@@ -16,4 +16,5 @@ module.exports = {
     EcovacsMapSegmentationCapability: require("./EcovacsMapSegmentationCapability"),
     EcovacsWaterUsageControlCapability: require("./EcovacsWaterUsageControlCapability"),
     EcovacsWifiConfigurationCapability: require("./EcovacsWifiConfigurationCapability"),
+    EcovacsZoneCleaningCapability: require("./EcovacsZoneCleaningCapability"),
 };

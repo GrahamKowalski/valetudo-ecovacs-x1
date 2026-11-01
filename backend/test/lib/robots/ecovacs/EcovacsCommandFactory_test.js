@@ -72,6 +72,27 @@ describe("EcovacsCommandFactory", () => {
             assert.strictEqual(Math.round(c.request.readFloatLE(58)), 135);
             assert.ok(Math.abs(c.request.readFloatLE(62) + 2.571) < 1e-3);
         });
+
+        it("cleanZones puts the customAreas count at byte 10 and dots from byte 14", () => {
+            const c = factory.cleanZones([
+                { x: 500, y: 1500 },
+                { x: -500, y: -1500 }
+            ]);
+
+            assert.strictEqual(c.service, "/task/WorkManage");
+            assert.strictEqual(c.md5sum, "*");
+            // 53-byte empty request + 2 dots * 8 bytes
+            assert.strictEqual(c.request.length, 69);
+            assert.strictEqual(c.request[0], 0);
+            assert.strictEqual(c.request[1], 2); // CUSTOM_CLEAN
+            assert.strictEqual(c.request.readUInt32LE(10), 2); // customAreas count
+            assert.strictEqual(c.request.readFloatLE(14), 500);
+            assert.strictEqual(c.request.readFloatLE(18), 1500);
+            assert.strictEqual(c.request.readFloatLE(22), -500);
+            assert.strictEqual(c.request.readFloatLE(26), -1500);
+            // ids count (byte 2) stays zero
+            assert.strictEqual(c.request.readUInt32LE(2), 0);
+        });
     });
 
     describe("SettingManage commands", () => {

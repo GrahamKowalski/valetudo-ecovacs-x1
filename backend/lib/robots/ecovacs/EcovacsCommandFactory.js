@@ -81,6 +81,23 @@ class EcovacsCommandFactory {
     }
 
     /**
+     * Cleans one or more freeform rectangular areas via /task/WorkManage
+     * (workType CUSTOM_CLEAN, "custom clean specific square"). Dots go in
+     * CleanWorkData.customAreas at request byte 10 (map/Dot[], 8 bytes each), in world-frame
+     * millimetres (the same frame goTo uses). Per the firmware's own message definition two
+     * dots form one area, so each zone is a pair of opposite rectangle corners; the dots are
+     * passed already flattened.
+     *
+     * @param {Array<{x: number, y: number}>} dots flattened pairs of opposite corners, world mm
+     * @returns {{service: string, request: Buffer, md5sum: string}}
+     */
+    cleanZones(dots) {
+        return this.workManageCommand(WORK_CONTROL.START, WORK_TYPE.CUSTOM_CLEAN, {
+            cleanData: { customAreas: dots }
+        });
+    }
+
+    /**
      * @param {number} x world x in mm (SLAM frame, dock = origin)
      * @param {number} y world y in mm
      * @param {number} [theta] heading in radians
@@ -379,6 +396,7 @@ const WORK_CONTROL = Object.freeze({
 const WORK_TYPE = Object.freeze({
     AUTO_CLEAN: 0,
     AREA_CLEAN: 1,
+    CUSTOM_CLEAN: 2,
     RETURN: 5,
     GOTO: 6,
     AUTO_COLLECT_DIRT: 13

@@ -78,8 +78,9 @@ layouts differ from the firmware dump, so they are reconstructed and covered by 
 tests):
 
 - `/task/WorkManage` (service): start, stop, pause, resume, home (return), area clean by
-  segment id (CleanWorkData.ids), go to an (x,y) point (ExtraWorkData.poses @ byte 34), and
-  manual auto-empty (workType 13, AUTO_COLLECT_DIRT).
+  segment id (CleanWorkData.ids), zone clean of freeform rectangles (workType 2 CUSTOM_CLEAN,
+  CleanWorkData.customAreas @ byte 10, two world-mm dots per rectangle), go to an (x,y) point
+  (ExtraWorkData.poses @ byte 34), and manual auto-empty (workType 13, AUTO_COLLECT_DIRT).
 - `/setting/SettingManage` (service): read-modify-write of fan level (byte 22), water level
   (byte 20), mop mode (byte 19), carpet on/off (CustomSetting type byte 2 = 8, value byte 3),
   do-not-disturb / block time (isOn byte 4, start hour byte 9 / min 10, end hour byte 16 /
@@ -100,6 +101,7 @@ Capabilities in `capabilities/`: `EcovacsBasicControlCapability`, `EcovacsLocate
 `EcovacsWaterUsageControlCapability` (low/medium/high/max), `EcovacsCarpetModeControlCapability`
 (on/off), `EcovacsAutoEmptyDockManualTriggerCapability`, `EcovacsDoNotDisturbCapability`,
 `EcovacsCombinedVirtualRestrictionsCapability` (no-go zones + virtual walls),
+`EcovacsZoneCleaningCapability` (clean a freeform rectangle, one zone per start),
 `EcovacsConsumableMonitoringCapability` (read-only; nothing until the first lifespan report),
 and `EcovacsKeyLockCapability` (child lock, write-only, last-set state cached). Mop mode and
 scent have no standard Valetudo capability; they are exposed as tested command-factory methods
@@ -108,7 +110,10 @@ scent have no standard Valetudo capability; they are exposed as tested command-f
 gained a `publish()` that briefly registers as a real ROS publisher). All inactive until the ROS
 link is up (`ecovacsRosMasterUri`), i.e. on the robot. Commands use md5sum "*" so the
 reconstructed layouts need no checksum match. Tested offline against byte-exact fixtures and a
-mocked robot, and exercised on the device.
+mocked robot, and exercised on the device. The zone-clean command (`cleanZones`, workType 2) is
+built on the device-verified `customAreas` byte layout (recovered by the same array-walk as the
+rest of the request) but has not yet been fired as a complete clean on the robot; verify it on
+device after the next deploy.
 
 ## Configuration
 
