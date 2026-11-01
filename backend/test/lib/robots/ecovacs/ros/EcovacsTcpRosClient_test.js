@@ -218,6 +218,16 @@ describe("EcovacsTcpRosClient", () => {
         assert.deepStrictEqual(errors, ["No publisher for /demo/Missing"]);
     });
 
+    it("uses capped exponential reconnect backoff", () => {
+        // base 3 s, doubling per failed attempt, capped at 60 s; resets to attempt 0 on connect
+        assert.strictEqual(EcovacsTcpRosClient.RECONNECT_DELAY(0), 3000);
+        assert.strictEqual(EcovacsTcpRosClient.RECONNECT_DELAY(1), 6000);
+        assert.strictEqual(EcovacsTcpRosClient.RECONNECT_DELAY(2), 12000);
+        assert.strictEqual(EcovacsTcpRosClient.RECONNECT_DELAY(4), 48000);
+        assert.strictEqual(EcovacsTcpRosClient.RECONNECT_DELAY(5), 60000); // 96000 capped
+        assert.strictEqual(EcovacsTcpRosClient.RECONNECT_DELAY(12), 60000);
+    });
+
     it("calls a service and returns the response body", async () => {
         const client = new EcovacsTcpRosClient({ masterUri: `http://127.0.0.1:${masterPort}`, callerId: "/test" });
         const res = await client.callService("/demo/Srv", Buffer.from([41]), { md5sum: "right" });

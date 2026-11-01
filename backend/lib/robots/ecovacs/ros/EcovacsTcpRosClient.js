@@ -58,7 +58,10 @@ class EcovacsTcpRosClient {
 
     /**
      * Subscribes and keeps the connection alive until close() is called. Reconnects
-     * with a 3 s backoff on any failure (publisher restart, network blip).
+     * with exponential backoff (3 s doubling to a 60 s cap), reset to 3 s once a
+     * connection is established. This keeps a not-ready ROS graph at startup from being
+     * hammered by every subscription at once, which otherwise piled up enough in-flight
+     * XML-RPC retries to push the backend past its heap limit before the graph came up.
      *
      * @param {string} topic
      * @param {object} handlers
@@ -69,7 +72,16 @@ class EcovacsTcpRosClient {
      * @returns {{close: () => void}}
      */
     subscribe(topic, handlers) {
-        const sub = { closed: false, socket: null, timer: null };
+        const sub = { closed: false, socket: null, timer: null, attempts: 0 };
+        const scheduleReconnect = () => {
+            if (sub.closed) {
+                return;
+            }
+            const delay = EcovacsTcpRosClient.RECONNECT_DELAY(sub.attempts);
+            sub.attempts++;
+            Logger.debug(`TCPROS ${topic} reconnecting in ${delay} ms`);
+            sub.timer = setTimeout(connect, delay);
+        };
         const connect = async () => {
             if (sub.closed) {
                 return;
@@ -95,6 +107,7 @@ class EcovacsTcpRosClient {
                             socket.destroy(new Error(`Publisher refused ${topic}: ${header.error}`));
                             return;
                         }
+                        sub.attempts = 0; // connection established; next reconnect starts from the base delay
                         if (handlers.onHeader) {
                             handlers.onHeader(header);
                         }
@@ -123,20 +136,17 @@ class EcovacsTcpRosClient {
                 socket.on("close", () => {
                     sub.socket = null;
                     if (!sub.closed) {
-                        Logger.debug(`TCPROS ${topic} closed, reconnecting in ${RECONNECT_DELAY_MS} ms`);
                         if (gotHeader && handlers.onDisconnect) {
                             handlers.onDisconnect();
                         }
-                        sub.timer = setTimeout(connect, RECONNECT_DELAY_MS);
+                        scheduleReconnect();
                     }
                 });
             } catch (err) {
                 if (handlers.onError) {
                     handlers.onError(err);
                 }
-                if (!sub.closed) {
-                    sub.timer = setTimeout(connect, RECONNECT_DELAY_MS);
-                }
+                scheduleReconnect();
             }
         };
 
@@ -373,6 +383,18 @@ class EcovacsTcpRosClient {
     }
 
     /**
+     * Exponential reconnect backoff: the base delay doubles with each failed attempt, up
+     * to a cap. attempts 0 is the first reconnect after a failure; it resets to 0 once a
+     * connection is established. Exposed for testing.
+     *
+     * @param {number} attempts failed attempts so far (0 = first reconnect)
+     * @returns {number} delay in ms
+     */
+    static RECONNECT_DELAY(attempts) {
+        return Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, attempts), MAX_RECONNECT_DELAY_MS);
+    }
+
+    /**
      * @param {Object<string, string>} fields
      * @returns {Buffer}
      */
@@ -420,6 +442,7 @@ function u32(n) {
     return b;
 }
 
-const RECONNECT_DELAY_MS = 3000;
+const BASE_RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_DELAY_MS = 60000;
 
 module.exports = EcovacsTcpRosClient;
